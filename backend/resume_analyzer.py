@@ -355,6 +355,15 @@ SKILL_GRAPH: dict[str, list[str]] = {
     "llm":                      ["machine learning", "nlp", "python"],
     "generative ai":            ["llm", "python"],
     "hugging face":             ["python", "pytorch"],
+    "pytorch":                  ["python", "machine learning"],
+    "tensorflow":               ["python", "machine learning"],
+    "scikit-learn":             ["python", "statistics"],
+    "numpy":                    ["python"],
+    "pandas":                   ["python", "numpy"],
+    "opencv":                   ["python"],
+    "xgboost":                  ["python", "machine learning"],
+    "lightgbm":                 ["python", "machine learning"],
+    "catboost":                 ["python", "machine learning"],
     "apache spark":             ["python", "sql"],
     "dbt":                      ["sql"],
     "snowflake":                ["sql"],
@@ -366,6 +375,9 @@ SKILL_GRAPH: dict[str, list[str]] = {
     "recommender systems":      ["machine learning", "sql"],
     "a/b testing":              ["statistics"],
     "hypothesis testing":       ["statistics"],
+    "data visualization":       ["python", "pandas"],
+    "exploratory data analysis":["pandas", "statistics"],
+    "reinforcement learning":   ["machine learning", "python"],
     # Backend / Cloud
     "docker":                   ["linux"],
     "kubernetes":               ["docker"],
@@ -375,10 +387,10 @@ SKILL_GRAPH: dict[str, list[str]] = {
     "azure":                    ["cloud computing"],
     "gcp":                      ["cloud computing"],
     "fastapi":                  ["python"],
-    "django":                   ["python"],
+    "django":                   ["python", "sql"],
     "flask":                    ["python"],
     "spring boot":              ["java"],
-    "rest api":                 ["python"],
+    "rest api":                 ["javascript"],
     "graphql":                  ["rest api"],
     "microservices":            ["docker", "rest api"],
     "serverless":               ["cloud computing"],
@@ -388,16 +400,28 @@ SKILL_GRAPH: dict[str, list[str]] = {
     "github actions":           ["git", "ci/cd"],
     "gitlab ci":                ["git", "ci/cd"],
     "azure devops":             ["azure", "ci/cd"],
-    # Frontend
+    "jenkins":                  ["git", "linux"],
+    # Frontend / JS ecosystem
+    "javascript":               [],
+    "typescript":               ["javascript"],
+    "html":                     [],
+    "css":                      ["html"],
+    "node.js":                  ["javascript"],
+    "express":                  ["node.js"],
     "react":                    ["javascript", "html", "css"],
     "angular":                  ["typescript", "html", "css"],
     "vue":                      ["javascript", "html", "css"],
     "next.js":                  ["react"],
+    "nuxt":                     ["vue"],
     "svelte":                   ["javascript"],
-    "typescript":               ["javascript"],
     "tailwind":                 ["css"],
     "sass":                     ["css"],
     "webpack":                  ["javascript"],
+    "vite":                     ["javascript"],
+    "jquery":                   ["javascript", "html"],
+    "bootstrap":                ["html", "css"],
+    "jwt":                      ["rest api"],
+    "oauth":                    ["rest api"],
     # HR
     "recruitment":              ["communication"],
     "talent acquisition":       ["recruitment", "communication"],
@@ -428,12 +452,16 @@ SKILL_GRAPH: dict[str, list[str]] = {
     "looker":                   ["sql"],
     "elasticsearch":            ["sql", "linux"],
     "postgresql":               ["sql"],
-    "mongodb":                  ["sql"],
-    "cassandra":                ["sql"],
-    "dynamodb":                 ["aws", "nosql"],
-    "firebase":                 ["nosql"],
+    "mysql":                    ["sql"],
+    "mongodb":                  [],
+    "redis":                    [],
+    "cassandra":                [],
+    "dynamodb":                 ["aws"],
+    "firebase":                 [],
+    "neo4j":                    ["sql"],
     # Security
-    "penetration testing":      ["linux", "networking"],
+    "penetration testing":      ["linux", "cybersecurity"],
+    "ethical hacking":          ["linux", "cybersecurity"],
     "siem":                     ["cybersecurity"],
     "incident response":        ["cybersecurity", "siem"],
     "vulnerability assessment": ["cybersecurity"],
@@ -442,31 +470,290 @@ SKILL_GRAPH: dict[str, list[str]] = {
     "wireframing":              ["ux design"],
     "prototyping":              ["ux design", "figma"],
     "usability testing":        ["ux design"],
+    "figma":                    [],
 }
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# SECTION 8 — LEARNING PATH GENERATOR
+# SECTION 7b — LEARNING RESOURCES
 # ══════════════════════════════════════════════════════════════════════════
 
-def _collect_prereqs(skill: str, known: set, path: list, visited: set) -> None:
-    if skill in visited:
-        return
-    visited.add(skill)
-    for prereq in SKILL_GRAPH.get(skill, []):
-        if prereq.lower() not in known:
-            _collect_prereqs(prereq, known, path, visited)
-    if skill.lower() not in known and skill not in path:
-        path.append(skill)
+# platform → (label, icon emoji)
+PLATFORM_META = {
+    "youtube":  {"label": "YouTube",  "icon": "▶"},
+    "coursera": {"label": "Coursera", "icon": "🎓"},
+    "udemy":    {"label": "Udemy",    "icon": "📘"},
+    "docs":     {"label": "Docs",     "icon": "📄"},
+    "kaggle":   {"label": "Kaggle",   "icon": "🏆"},
+    "freecodecamp": {"label": "freeCodeCamp", "icon": "🔥"},
+    "roadmap":  {"label": "Roadmap",  "icon": "🗺"},
+}
+
+RESOURCES: dict[str, list[dict]] = {
+    "python":           [{"platform": "youtube",  "title": "Python for Beginners – Full Course",        "url": "https://www.youtube.com/watch?v=eWRfhZUzrAc"},
+                         {"platform": "coursera", "title": "Python for Everybody",                       "url": "https://www.coursera.org/specializations/python"}],
+    "sql":              [{"platform": "youtube",  "title": "SQL Tutorial – Full Database Course",        "url": "https://www.youtube.com/watch?v=HXV3zeQKqGY"},
+                         {"platform": "kaggle",   "title": "Intro to SQL – Kaggle Learn",                "url": "https://www.kaggle.com/learn/intro-to-sql"}],
+    "machine learning": [{"platform": "coursera", "title": "Machine Learning Specialization (Andrew Ng)","url": "https://www.coursera.org/specializations/machine-learning-introduction"},
+                         {"platform": "youtube",  "title": "ML Course by StatQuest",                    "url": "https://www.youtube.com/watch?v=Gv9_4yMHFhI"}],
+    "deep learning":    [{"platform": "coursera", "title": "Deep Learning Specialization",               "url": "https://www.coursera.org/specializations/deep-learning"},
+                         {"platform": "youtube",  "title": "Neural Networks: Zero to Hero",              "url": "https://www.youtube.com/watch?v=VMj-3S1tku0"}],
+    "nlp":              [{"platform": "coursera", "title": "NLP Specialization (DeepLearning.AI)",       "url": "https://www.coursera.org/specializations/natural-language-processing"},
+                         {"platform": "youtube",  "title": "Hugging Face NLP Course",                   "url": "https://www.youtube.com/watch?v=00GKzGyWFEs"}],
+    "pytorch":          [{"platform": "docs",     "title": "PyTorch Official Tutorials",                 "url": "https://pytorch.org/tutorials/"},
+                         {"platform": "youtube",  "title": "PyTorch for Deep Learning – Full Course",   "url": "https://www.youtube.com/watch?v=V_xro1bcAuA"}],
+    "tensorflow":       [{"platform": "docs",     "title": "TensorFlow Official Tutorials",              "url": "https://www.tensorflow.org/tutorials"},
+                         {"platform": "coursera", "title": "TensorFlow Developer Certificate",           "url": "https://www.coursera.org/professional-certificates/tensorflow-in-practice"}],
+    "docker":           [{"platform": "youtube",  "title": "Docker Tutorial for Beginners",              "url": "https://www.youtube.com/watch?v=fqMOX6JJhGo"},
+                         {"platform": "docs",     "title": "Docker Official Get Started",                "url": "https://docs.docker.com/get-started/"}],
+    "kubernetes":       [{"platform": "youtube",  "title": "Kubernetes Tutorial for Beginners",          "url": "https://www.youtube.com/watch?v=X48VuDVv0do"},
+                         {"platform": "docs",     "title": "Kubernetes Official Docs",                   "url": "https://kubernetes.io/docs/tutorials/"}],
+    "aws":              [{"platform": "youtube",  "title": "AWS Certified Cloud Practitioner – Full Course","url": "https://www.youtube.com/watch?v=SOTamWNgDKc"},
+                         {"platform": "docs",     "title": "AWS Getting Started",                        "url": "https://aws.amazon.com/getting-started/"}],
+    "react":            [{"platform": "docs",     "title": "React Official Docs",                        "url": "https://react.dev/learn"},
+                         {"platform": "youtube",  "title": "React JS Full Course",                      "url": "https://www.youtube.com/watch?v=bMknfKXIFA8"}],
+    "javascript":       [{"platform": "freecodecamp","title": "JavaScript Algorithms & Data Structures",  "url": "https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures/"},
+                         {"platform": "youtube",  "title": "JavaScript Full Course",                    "url": "https://www.youtube.com/watch?v=PkZNo7MFNFg"}],
+    "typescript":       [{"platform": "docs",     "title": "TypeScript Handbook",                        "url": "https://www.typescriptlang.org/docs/handbook/"},
+                         {"platform": "youtube",  "title": "TypeScript Full Course",                    "url": "https://www.youtube.com/watch?v=30LWjhZzg50"}],
+    "git":              [{"platform": "youtube",  "title": "Git & GitHub Crash Course",                  "url": "https://www.youtube.com/watch?v=RGOj5yH7evk"},
+                         {"platform": "docs",     "title": "Pro Git Book (free)",                        "url": "https://git-scm.com/book/en/v2"}],
+    "linux":            [{"platform": "youtube",  "title": "Linux Command Line Full Course",             "url": "https://www.youtube.com/watch?v=ZtqBQ68cfJc"},
+                         {"platform": "freecodecamp","title": "Linux for Beginners",                      "url": "https://www.freecodecamp.org/news/the-linux-commands-handbook/"}],
+    "pandas":           [{"platform": "docs",     "title": "Pandas Official Getting Started",            "url": "https://pandas.pydata.org/docs/getting_started/"},
+                         {"platform": "kaggle",   "title": "Pandas – Kaggle Learn",                      "url": "https://www.kaggle.com/learn/pandas"}],
+    "scikit-learn":     [{"platform": "docs",     "title": "Scikit-learn User Guide",                    "url": "https://scikit-learn.org/stable/user_guide.html"},
+                         {"platform": "youtube",  "title": "Scikit-learn Crash Course",                 "url": "https://www.youtube.com/watch?v=0B5eIE_1vpU"}],
+    "mlops":            [{"platform": "coursera", "title": "MLOps Specialization (DeepLearning.AI)",     "url": "https://www.coursera.org/specializations/machine-learning-engineering-for-production-mlops"},
+                         {"platform": "youtube",  "title": "MLOps Explained",                           "url": "https://www.youtube.com/watch?v=NgWujOrCZFo"}],
+    "llm":              [{"platform": "youtube",  "title": "LLMs Explained – Andrej Karpathy",          "url": "https://www.youtube.com/watch?v=zjkBMFhNj_g"},
+                         {"platform": "coursera", "title": "Generative AI with LLMs",                   "url": "https://www.coursera.org/learn/generative-ai-with-llms"}],
+    "generative ai":    [{"platform": "coursera", "title": "Generative AI for Everyone",                "url": "https://www.coursera.org/learn/generative-ai-for-everyone"},
+                         {"platform": "youtube",  "title": "Generative AI Full Course",                 "url": "https://www.youtube.com/watch?v=mEsleV16qdo"}],
+    "hugging face":     [{"platform": "docs",     "title": "Hugging Face NLP Course",                   "url": "https://huggingface.co/learn/nlp-course/"},
+                         {"platform": "youtube",  "title": "Hugging Face Transformers Tutorial",        "url": "https://www.youtube.com/watch?v=jan07gloaRg"}],
+    "data science":     [{"platform": "coursera", "title": "IBM Data Science Professional Certificate",  "url": "https://www.coursera.org/professional-certificates/ibm-data-science"},
+                         {"platform": "kaggle",   "title": "Kaggle Learn – Data Science Path",          "url": "https://www.kaggle.com/learn"}],
+    "statistics":       [{"platform": "youtube",  "title": "Statistics for Data Science – Full Course", "url": "https://www.youtube.com/watch?v=xxpc-HPKN28"},
+                         {"platform": "coursera", "title": "Statistics with Python Specialization",     "url": "https://www.coursera.org/specializations/statistics-with-python"}],
+    "postgresql":       [{"platform": "youtube",  "title": "PostgreSQL Tutorial – Full Course",         "url": "https://www.youtube.com/watch?v=qw--VYLpxG4"},
+                         {"platform": "docs",     "title": "PostgreSQL Official Tutorial",               "url": "https://www.postgresql.org/docs/current/tutorial.html"}],
+    "mongodb":          [{"platform": "youtube",  "title": "MongoDB Full Course",                       "url": "https://www.youtube.com/watch?v=ofme2o29ngU"},
+                         {"platform": "docs",     "title": "MongoDB University (free)",                  "url": "https://learn.mongodb.com/"}],
+    "django":           [{"platform": "youtube",  "title": "Django Full Course",                        "url": "https://www.youtube.com/watch?v=PtQiiknWUcI"},
+                         {"platform": "docs",     "title": "Django Official Tutorial",                   "url": "https://docs.djangoproject.com/en/stable/intro/tutorial01/"}],
+    "flask":            [{"platform": "youtube",  "title": "Flask Tutorial",                            "url": "https://www.youtube.com/watch?v=Z1RJmh_OqeA"},
+                         {"platform": "docs",     "title": "Flask Official Quickstart",                  "url": "https://flask.palletsprojects.com/en/latest/quickstart/"}],
+    "fastapi":          [{"platform": "docs",     "title": "FastAPI Official Tutorial",                  "url": "https://fastapi.tiangolo.com/tutorial/"},
+                         {"platform": "youtube",  "title": "FastAPI Full Course",                       "url": "https://www.youtube.com/watch?v=7t2alSnE2-I"}],
+    "terraform":        [{"platform": "youtube",  "title": "Terraform Full Course",                     "url": "https://www.youtube.com/watch?v=SLB_c_ayRMo"},
+                         {"platform": "docs",     "title": "Terraform Official Tutorials",               "url": "https://developer.hashicorp.com/terraform/tutorials"}],
+    "ci/cd":            [{"platform": "youtube",  "title": "CI/CD Pipeline Tutorial",                   "url": "https://www.youtube.com/watch?v=R8_veQiYBjI"},
+                         {"platform": "docs",     "title": "GitHub Actions Quickstart",                  "url": "https://docs.github.com/en/actions/quickstart"}],
+    "computer vision":  [{"platform": "coursera", "title": "Deep Learning & Computer Vision",           "url": "https://www.coursera.org/learn/convolutional-neural-networks"},
+                         {"platform": "youtube",  "title": "OpenCV Python Tutorial",                    "url": "https://www.youtube.com/watch?v=oXlwWbU8l2o"}],
+    "data engineering": [{"platform": "youtube",  "title": "Data Engineering Full Course",              "url": "https://www.youtube.com/watch?v=ysz5S6PUM-U"},
+                         {"platform": "coursera", "title": "IBM Data Engineering Professional Certificate","url": "https://www.coursera.org/professional-certificates/ibm-data-engineer"}],
+    "apache spark":     [{"platform": "youtube",  "title": "Apache Spark Full Course",                  "url": "https://www.youtube.com/watch?v=_C8kWso4ne4"},
+                         {"platform": "docs",     "title": "Spark Official Quick Start",                 "url": "https://spark.apache.org/docs/latest/quick-start.html"}],
+    "excel":            [{"platform": "youtube",  "title": "Excel Full Course",                         "url": "https://www.youtube.com/watch?v=Vl0H-qTclOg"},
+                         {"platform": "freecodecamp","title": "Excel for Beginners",                      "url": "https://www.freecodecamp.org/news/excel-tutorial-for-beginners/"}],
+    "power bi":         [{"platform": "youtube",  "title": "Power BI Full Course",                      "url": "https://www.youtube.com/watch?v=fnA454XdDys"},
+                         {"platform": "docs",     "title": "Microsoft Power BI Learning",                "url": "https://learn.microsoft.com/en-us/power-bi/fundamentals/"}],
+    "tableau":          [{"platform": "youtube",  "title": "Tableau Full Course",                       "url": "https://www.youtube.com/watch?v=TPMlZxRRaBQ"},
+                         {"platform": "docs",     "title": "Tableau Free Training Videos",               "url": "https://www.tableau.com/learn/training"}],
+    "cybersecurity":    [{"platform": "coursera", "title": "Google Cybersecurity Certificate",          "url": "https://www.coursera.org/professional-certificates/google-cybersecurity"},
+                         {"platform": "youtube",  "title": "Cybersecurity Full Course",                 "url": "https://www.youtube.com/watch?v=hXSFdwIOfnE"}],
+    "java":             [{"platform": "youtube",  "title": "Java Full Course",                          "url": "https://www.youtube.com/watch?v=eIrMbAQSU34"},
+                         {"platform": "docs",     "title": "Oracle Java Tutorials",                     "url": "https://docs.oracle.com/javase/tutorial/"}],
+    "html":             [{"platform": "freecodecamp","title": "Responsive Web Design Certification",      "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/"},
+                         {"platform": "youtube",  "title": "HTML Full Course",                          "url": "https://www.youtube.com/watch?v=pQN-pnXPaVg"}],
+    "css":              [{"platform": "freecodecamp","title": "CSS Full Course",                          "url": "https://www.freecodecamp.org/learn/2022/responsive-web-design/"},
+                         {"platform": "youtube",  "title": "CSS Tutorial – Zero to Hero",               "url": "https://www.youtube.com/watch?v=1Rs2ND1ryYc"}],
+    "node.js":          [{"platform": "youtube",  "title": "Node.js Full Course",                       "url": "https://www.youtube.com/watch?v=Oe421EPjeBE"},
+                         {"platform": "docs",     "title": "Node.js Official Guides",                   "url": "https://nodejs.org/en/learn/getting-started/introduction-to-nodejs"}],
+    "gcp":              [{"platform": "youtube",  "title": "Google Cloud Full Course",                  "url": "https://www.youtube.com/watch?v=IUU6OR8yHCc"},
+                         {"platform": "docs",     "title": "Google Cloud Skills Boost (free tier)",     "url": "https://www.cloudskillsboost.google/"}],
+    "azure":            [{"platform": "youtube",  "title": "Azure Full Course",                         "url": "https://www.youtube.com/watch?v=NKEFWyqJ5XA"},
+                         {"platform": "docs",     "title": "Microsoft Azure Learn",                     "url": "https://learn.microsoft.com/en-us/azure/"}],
+    "snowflake":        [{"platform": "youtube",  "title": "Snowflake Tutorial for Beginners",          "url": "https://www.youtube.com/watch?v=9PBvVeCQi0w"},
+                         {"platform": "docs",     "title": "Snowflake Quickstart Guides",               "url": "https://quickstarts.snowflake.com/"}],
+    "model deployment": [{"platform": "youtube",  "title": "ML Model Deployment Tutorial",              "url": "https://www.youtube.com/watch?v=bjsJOl8gz5k"},
+                         {"platform": "coursera", "title": "Deploying ML Models in Production",         "url": "https://www.coursera.org/learn/deploying-machine-learning-models-in-production"}],
+    "feature engineering":[{"platform": "kaggle", "title": "Feature Engineering – Kaggle Learn",        "url": "https://www.kaggle.com/learn/feature-engineering"},
+                         {"platform": "youtube",  "title": "Feature Engineering Full Guide",            "url": "https://www.youtube.com/watch?v=6WDFfaYtN6s"}],
+}
 
 
-def generate_learning_path(user_skills: list[str], missing_skills: list[str]) -> list[str]:
-    known   = {s.lower() for s in user_skills}
-    path    : list[str] = []
-    visited : set[str]  = set()
-    for skill in missing_skills:
-        _collect_prereqs(skill, known, path, visited)
-    return path
+def get_resources(skill: str) -> list[dict]:
+    """Return curated resources for a skill, with a Google fallback."""
+    key = skill.lower().strip()
+    if key in RESOURCES:
+        return RESOURCES[key]
+    # Generic fallback — always gives the user something to click
+    query = skill.replace(' ', '+')
+    return [
+        {"platform": "youtube",  "title": f"{skill} Tutorial",
+         "url": f"https://www.youtube.com/results?search_query={query}+tutorial"},
+        {"platform": "coursera", "title": f"{skill} on Coursera",
+         "url": f"https://www.coursera.org/search?query={query}"},
+    ]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# SECTION 8 — LEVEL DETECTION
+# ══════════════════════════════════════════════════════════════════════════
+
+# Skills that signal increasing depth — ordered beginner → advanced
+LEVEL_TIERS: dict[str, int] = {
+    # Tier 1 — foundational (beginner signals)
+    "python": 1, "java": 1, "javascript": 1, "html": 1, "css": 1,
+    "sql": 1, "excel": 1, "git": 1, "linux": 1, "communication": 1,
+    "r": 1, "bash": 1, "typescript": 1, "php": 1,
+    # Tier 2 — applied / intermediate
+    "machine learning": 2, "data analysis": 2, "statistics": 2,
+    "pandas": 2, "numpy": 2, "scikit-learn": 2, "react": 2,
+    "node.js": 2, "django": 2, "flask": 2, "fastapi": 2,
+    "docker": 2, "rest api": 2, "postgresql": 2, "mongodb": 2,
+    "tableau": 2, "power bi": 2, "agile": 2, "aws": 2,
+    "data visualization": 2, "feature engineering": 2,
+    "data science": 2, "data engineering": 2,
+    # Tier 3 — advanced / specialist
+    "deep learning": 3, "nlp": 3, "computer vision": 3,
+    "pytorch": 3, "tensorflow": 3, "mlops": 3, "llm": 3,
+    "generative ai": 3, "kubernetes": 3, "terraform": 3,
+    "apache spark": 3, "databricks": 3, "snowflake": 3,
+    "hugging face": 3, "reinforcement learning": 3,
+    "model deployment": 3, "ci/cd": 3, "microservices": 3,
+    "cybersecurity": 3, "penetration testing": 3,
+    "financial modeling": 3, "valuation": 3,
+}
+
+
+def detect_level(user_skills: list[str]) -> str:
+    """
+    Returns 'beginner', 'intermediate', or 'advanced' based on the
+    weighted tier score of the candidate's skill set.
+
+    Scoring:
+      - Each tier-1 skill  = 1 pt
+      - Each tier-2 skill  = 2 pts
+      - Each tier-3 skill  = 4 pts
+    Thresholds (tuned against real resumes):
+      - advanced    : score >= 16  OR  3+ tier-3 skills
+      - intermediate: score >= 6   OR  2+ tier-2 skills
+      - beginner    : everything else
+    """
+    user_lower = {s.lower() for s in user_skills}
+    score      = 0
+    tier3_count = 0
+    tier2_count = 0
+
+    for skill in user_lower:
+        tier = LEVEL_TIERS.get(skill, 0)
+        if tier == 3:
+            score += 4
+            tier3_count += 1
+        elif tier == 2:
+            score += 2
+            tier2_count += 1
+        elif tier == 1:
+            score += 1
+
+    if score >= 16 or tier3_count >= 3:
+        return "advanced"
+    if score >= 6 or tier2_count >= 2:
+        return "intermediate"
+    return "beginner"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# SECTION 9 — LEARNING PATH GENERATOR (level-aware)
+# ══════════════════════════════════════════════════════════════════════════
+
+def _topological_sort(skills_to_learn: set[str], known: set[str]) -> list[str]:
+    """
+    Kahn's algorithm topological sort over the subset of skills the candidate
+    needs to learn (missing + their unknown prereqs).
+    Guarantees prereqs always appear before the skills that depend on them.
+    """
+    # Expand: collect all unknown prereqs transitively
+    all_needed: set[str] = set()
+    stack = list(skills_to_learn)
+    while stack:
+        skill = stack.pop()
+        if skill in all_needed or skill in known:
+            continue
+        all_needed.add(skill)
+        for prereq in SKILL_GRAPH.get(skill, []):
+            if prereq not in known and prereq not in all_needed:
+                stack.append(prereq)
+
+    # Build in-degree map restricted to all_needed
+    in_degree: dict[str, int] = {s: 0 for s in all_needed}
+    dependents: dict[str, list[str]] = {s: [] for s in all_needed}
+    for skill in all_needed:
+        for prereq in SKILL_GRAPH.get(skill, []):
+            if prereq in all_needed:          # edge prereq → skill
+                in_degree[skill] += 1
+                dependents[prereq].append(skill)
+
+    # Start with nodes that have no unmet prereqs (in-degree 0)
+    queue = sorted([s for s, d in in_degree.items() if d == 0],
+                   key=lambda s: LEVEL_TIERS.get(s, 0))  # foundations first
+    result: list[str] = []
+    while queue:
+        node = queue.pop(0)
+        result.append(node)
+        for dep in dependents[node]:
+            in_degree[dep] -= 1
+            if in_degree[dep] == 0:
+                queue.append(dep)
+                queue.sort(key=lambda s: LEVEL_TIERS.get(s, 0))  # keep tier order
+
+    # Append any remaining (cycle guard — shouldn't happen with our graph)
+    remaining = [s for s in all_needed if s not in result]
+    return result + remaining
+
+
+def generate_learning_path(
+    user_skills: list[str],
+    missing_skills: list[str],
+    level: str = "beginner",
+) -> list[dict]:
+    known       = {s.lower() for s in user_skills}
+    missing_set = {s.lower() for s in missing_skills}
+
+    ordered = _topological_sort(missing_set, known)
+
+    min_tier = {"beginner": 0, "intermediate": 2, "advanced": 3}.get(level, 0)
+
+    TIER_META = {
+        1: {"duration": "1 week",    "type": "Foundation"},
+        2: {"duration": "2 weeks",   "type": "Core Skill"},
+        3: {"duration": "3 weeks",   "type": "Advanced Topic"},
+        0: {"duration": "1–2 weeks", "type": "Skill Gap"},
+    }
+
+    steps = []
+    for skill in ordered:
+        tier = LEVEL_TIERS.get(skill.lower(), 0)
+        is_directly_missing = skill.lower() in missing_set
+        if not is_directly_missing and tier > 0 and tier < min_tier:
+            continue
+        meta = TIER_META.get(tier, TIER_META[0])
+        steps.append({
+            "skill":     skill,
+            "tier":      tier,
+            "duration":  meta["duration"],
+            "type":      meta["type"],
+            "resources": get_resources(skill),
+        })
+
+    for i, s in enumerate(steps):
+        s["priority"] = "High" if i < 3 else "Medium"
+
+    return steps
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -635,7 +922,8 @@ def generate_learning_path_ollama(user, missing) -> list[str]:
         return [s.strip() for s in path if isinstance(s, str)]
     except Exception as e:
         log.warning(f"Ollama learning path failed ({e}), falling back.")
-        return generate_learning_path(user, missing)
+        known = {s.lower() for s in user}
+        return _topological_sort({s.lower() for s in missing}, known)
 
 
 # ── HuggingFace (cloud) ───────────────────────────────────────────────────
@@ -706,28 +994,39 @@ def analyze(
     # ── Gap analysis ───────────────────────────────────────────────────
     missing_skills = find_missing(user_skills, required_skills)
     match_score    = compute_match_score(user_skills, required_skills, missing_skills)
+    level          = detect_level(user_skills)
 
     # ── Path & reasoning ───────────────────────────────────────────────
     if mode == "ollama":
-        learning_path = generate_learning_path_ollama(user_skills, missing_skills)
-        reasoning     = generate_reasoning_ollama(user_skills, required_skills, missing_skills)
+        lp_raw    = generate_learning_path_ollama(user_skills, missing_skills)
+        learning_path = [
+            {"skill": s, "tier": LEVEL_TIERS.get(s.lower(), 0),
+             "duration": "1–2 weeks", "type": "Skill Gap",
+             "priority": "High" if i < 3 else "Medium",
+             "resources": get_resources(s)}
+            for i, s in enumerate(lp_raw)
+        ]
+        reasoning = generate_reasoning_ollama(user_skills, required_skills, missing_skills)
     else:
-        learning_path = generate_learning_path(user_skills, missing_skills)
+        learning_path = generate_learning_path(user_skills, missing_skills, level=level)
         reasoning     = generate_reasoning(user_skills, required_skills, missing_skills)
 
     return {
         "mode":            mode,
-        "match_score":     match_score,            # ← NEW: 0–100
+        "level":           level,
+        "match_score":     match_score,
         "user_skills":     [s.title() for s in user_skills],
         "required_skills": [s.title() for s in required_skills],
         "missing_skills":  [s.title() for s in missing_skills],
-        "learning_path":   [s.title() for s in learning_path],
+        "learning_path":   [
+            {**step, "skill": step["skill"].title()} for step in learning_path
+        ],
         "reasoning":       reasoning,
-        "summary": {                               # ← NEW: quick stats for dashboard cards
-            "total_required":  len(required_skills),
-            "matched":         len(required_skills) - len(missing_skills),
-            "missing":         len(missing_skills),
-            "extra_skills":    len(user_skills) - (len(required_skills) - len(missing_skills)),
+        "summary": {
+            "total_required": len(required_skills),
+            "matched":        len(required_skills) - len(missing_skills),
+            "missing":        len(missing_skills),
+            "extra_skills":   len(user_skills) - (len(required_skills) - len(missing_skills)),
         }
     }
 
@@ -808,11 +1107,12 @@ class SummaryModel(BaseModel):
 
 class AnalyzeResponse(BaseModel):
     mode:            str
+    level:           str
     match_score:     int
     user_skills:     list[str]
     required_skills: list[str]
     missing_skills:  list[str]
-    learning_path:   list[str]
+    learning_path:   list[dict]
     reasoning:       list[dict]
     summary:         dict
 

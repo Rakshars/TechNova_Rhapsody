@@ -24,8 +24,19 @@ export default function ResultsSection({ data }) {
 
   return (
     <>
-      <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={slideUp} className="section-label" style={{ marginTop: 0 }}>
+      <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={slideUp} className="section-label" style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 14 }}>
         <TerminalText text="Analysis Summary" delay={0.1} />
+        {data.level && (
+          <span style={{
+            fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.08em',
+            padding: '4px 12px', borderRadius: 100, textTransform: 'uppercase',
+            background: data.level === 'advanced' ? 'rgba(123,97,255,0.18)' : data.level === 'intermediate' ? 'rgba(74,240,196,0.12)' : 'rgba(250,200,80,0.12)',
+            color:      data.level === 'advanced' ? 'var(--accent2)'          : data.level === 'intermediate' ? 'var(--accent)'           : '#fac850',
+            border:     data.level === 'advanced' ? '1px solid rgba(123,97,255,0.3)' : data.level === 'intermediate' ? '1px solid rgba(74,240,196,0.25)' : '1px solid rgba(250,200,80,0.25)',
+          }}>
+            {data.level === 'advanced' ? '🏆 Advanced' : data.level === 'intermediate' ? '⚡ Intermediate' : '🌱 Beginner'}
+          </span>
+        )}
       </motion.div>
       
       <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={slideUp}>
