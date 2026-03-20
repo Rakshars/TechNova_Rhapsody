@@ -301,19 +301,39 @@ def compute_match_score(
     missing_skills: list[str],
 ) -> int:
     """
-    Returns an integer 0-100.
-    Formula:
-      - Base: (matched / required) * 80
-      - Bonus up to 20: extra skills the candidate has beyond what's required
-        (shows breadth). Capped so total stays ≤ 100.
+    Accurate 0-100 match score.
+
+    Problem with the old formula: semantic extraction inflates required_skills
+    to 50-100+ entries for any JD, making matched/required always tiny.
+
+    New approach:
+      1. Core score  = (matched_required / total_required) * 100
+         — pure coverage of what the JD asked for
+      2. Breadth bonus (up to +10): candidate has extra relevant skills
+         beyond the JD, capped so total stays ≤ 100
+      3. Depth penalty: if required_skills list is suspiciously large
+         (semantic over-extraction), we trust the matched count more than
+         the inflated denominator by soft-capping required at 30.
     """
     if not required_skills:
         return 0
-    matched = len(required_skills) - len(missing_skills)
-    base = (matched / len(required_skills)) * 80
-    extra = len(set(s.lower() for s in user_skills) -
-                set(s.lower() for s in required_skills))
-    bonus = min(extra * 2, 20)          # 2 pts per extra skill, capped at 20
+
+    user_set    = {s.lower() for s in user_skills}
+    req_set     = {s.lower() for s in required_skills}
+    missing_set = {s.lower() for s in missing_skills}
+    matched     = len(req_set) - len(missing_set)
+
+    # Soft-cap denominator: semantic mode can return 80+ JD skills;
+    # cap at 30 so one missing skill doesn't tank the score unfairly.
+    effective_total = min(len(req_set), 30)
+    effective_matched = min(matched, effective_total)
+
+    base = (effective_matched / effective_total) * 100
+
+    # Small breadth bonus: extra skills candidate has (not in JD)
+    extra = len(user_set - req_set)
+    bonus = min(extra * 0.5, 10)   # 0.5 pt per extra skill, max +10
+
     return min(round(base + bonus), 100)
 
 
