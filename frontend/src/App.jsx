@@ -117,14 +117,41 @@ export default function App() {
         skills_matched: raw.user_skills ?? [],
         skills_missing: raw.missing_skills ?? [],
         match_score: raw.match_score ?? 0,
-        learning_path: (raw.learning_path ?? []).map((skill, i) => ({
-          step: i + 1,
-          title: skill,
-          description: `Add ${skill} to your skill set to meet the job requirements.`,
-          duration: '1–2 weeks',
-          type: 'Skill Gap',
-          priority: i < 3 ? 'High' : 'Medium',
-        })),
+        learning_path: (raw.learning_path ?? []).map((skill, i) => {
+          // If the skill is in the learning path but WASN'T directly missing from the JD, 
+          // the backend's SKILL_GRAPH algorithm intelligently injected it as a prerequisite!
+          const missingLower = (raw.missing_skills ?? []).map(s => s.toLowerCase());
+          const isPrereq = !missingLower.includes(skill.toLowerCase());
+
+          // Determine what advanced skill this prerequisite is unlocking
+          const targetSkill = (raw.learning_path ?? []).slice(i + 1).find(s => missingLower.includes(s.toLowerCase())) || "advanced skills";
+
+          const explanationNode = isPrereq ? (
+            <div>
+              <div style={{ color: 'var(--accent)', marginBottom: 6, fontWeight: 600 }}>Added because:</div>
+              <ul style={{ margin: 0, paddingLeft: 16, lineHeight: 1.6 }}>
+                <li>Needed before <strong style={{ color: '#fff' }}>{targetSkill}</strong></li>
+              </ul>
+            </div>
+          ) : (
+            <div>
+              <div style={{ color: 'var(--accent)', marginBottom: 6, fontWeight: 600 }}>Added because:</div>
+              <ul style={{ margin: 0, paddingLeft: 16, lineHeight: 1.6 }}>
+                <li>Required in Job Description</li>
+                <li>Missing in resume</li>
+              </ul>
+            </div>
+          );
+
+          return {
+            step: i + 1,
+            title: skill,
+            description: explanationNode,
+            duration: isPrereq ? '1 week (Foundation)' : '2–3 weeks (Application)',
+            type: isPrereq ? 'Prerequisite' : 'Core Focus',
+            priority: isPrereq ? 'Critical' : (i < 3 ? 'High' : 'Medium'),
+          };
+        }),
         reasoning: (raw.reasoning ?? []).map(r => r.reason ?? '').filter(Boolean).join(' '),
       }
 
