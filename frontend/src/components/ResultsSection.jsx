@@ -5,6 +5,7 @@ import SkillChip from './SkillChip'
 import PathStep from './PathStep'
 import ReasoningBox from './ReasoningBox'
 import AvatarScanner from './AvatarScanner'
+import TerminalText from './TerminalText'
 
 export default function ResultsSection({ data }) {
   const pathRef = useRef(null)
@@ -23,7 +24,9 @@ export default function ResultsSection({ data }) {
 
   return (
     <>
-      <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={slideUp} className="section-label" style={{ marginTop: 0 }}>Analysis Summary</motion.div>
+      <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={slideUp} className="section-label" style={{ marginTop: 0 }}>
+        <TerminalText text="Analysis Summary" delay={0.1} />
+      </motion.div>
       
       <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={slideUp}>
         <AvatarScanner matchedSkills={data.skills_matched} missingSkills={data.skills_missing} />
@@ -38,7 +41,7 @@ export default function ResultsSection({ data }) {
       <motion.div className="divider" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={slideUp} />
 
       <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={slideUp}>
-        <div className="section-label">Step 02 — Skill Analysis</div>
+        <div className="section-label"><TerminalText text="Step 02 — Skill Analysis" delay={0.2} /></div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, padding: 24, transition: 'border-color 0.3s' }} className="metric-card">
             <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -64,7 +67,7 @@ export default function ResultsSection({ data }) {
       <motion.div className="divider" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={slideUp} />
 
       <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={slideUp}>
-        <div className="section-label">Step 03 — Learning Pathway</div>
+        <div className="section-label"><TerminalText text="Step 03 — Learning Pathway" delay={0.2} /></div>
         <div ref={pathRef} style={{ position: 'relative' }}>
           <div style={{
             position: 'absolute', left: 21, top: 0, bottom: 0, width: 2,
@@ -85,7 +88,7 @@ export default function ResultsSection({ data }) {
       <motion.div className="divider" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={slideUp} />
 
       <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={slideUp}>
-        <div className="section-label">Step 04 — Reasoning Trace</div>
+        <div className="section-label"><TerminalText text="Step 04 — Reasoning Trace" delay={0.2} /></div>
         <ReasoningBox text={data.reasoning} />
       </motion.div>
     </>

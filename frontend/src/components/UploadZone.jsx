@@ -30,10 +30,27 @@ export default function UploadZone({ label, subLabel, accept, file, onFile }) {
       whileHover={{ y: -4 }}
       whileTap={{ scale: 0.98 }}
       style={{
+        position: 'relative', overflow: 'hidden',
         borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 16, 
         padding: '36px 24px', textAlign: 'center', cursor: 'pointer',
       }}
     >
+      {/* Sci-fi frame corners */}
+      <div style={{ position: 'absolute', top: 12, left: 12, width: 8, height: 8, borderTop: '2px solid var(--muted)', borderLeft: '2px solid var(--muted)', opacity: 0.5 }} />
+      <div style={{ position: 'absolute', top: 12, right: 12, width: 8, height: 8, borderTop: '2px solid var(--muted)', borderRight: '2px solid var(--muted)', opacity: 0.5 }} />
+      <div style={{ position: 'absolute', bottom: 12, left: 12, width: 8, height: 8, borderBottom: '2px solid var(--muted)', borderLeft: '2px solid var(--muted)', opacity: 0.5 }} />
+      <div style={{ position: 'absolute', bottom: 12, right: 12, width: 8, height: 8, borderBottom: '2px solid var(--muted)', borderRight: '2px solid var(--muted)', opacity: 0.5 }} />
+
+      {/* AI Scanning Lazer on Hover/Drag */}
+      {(isDragging || file) && (
+         <motion.div
+           initial={{ top: 0, opacity: 0 }}
+           animate={{ top: ['0%', '100%', '0%'], opacity: 1 }}
+           transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+           style={{ position: 'absolute', left: 0, right: 0, height: 1, background: 'var(--accent)', boxShadow: '0 0 10px var(--accent)', zIndex: 10 }}
+         />
+      )}
+
       <input ref={inputRef} type="file" accept={accept} onChange={handleChange} style={{ display: 'none' }} />
       <motion.div 
         animate={{ y: isDragging ? -5 : 0, scale: isDragging ? 1.1 : 1 }}

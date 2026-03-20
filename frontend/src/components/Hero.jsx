@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { motion, useScroll, useTransform, useMotionValue, useSpring } from 'framer-motion'
+import TerminalText from './TerminalText'
 
 export default function Hero() {
   const mouseX = useMotionValue(0)
@@ -155,9 +156,9 @@ export default function Hero() {
           letterSpacing: '-0.03em', position: 'relative', zIndex: 2
         }}
       >
-        Close your<br />
-        <span style={{ color: 'var(--accent)' }}>skill gap</span>,<br />
-        <span style={{ color: 'var(--accent2)' }}>faster</span>
+        <TerminalText text="Close your" delay={0.4} /><br />
+        <span style={{ color: 'var(--accent)' }}><TerminalText text="skill gap" delay={0.7} /></span>,<br />
+        <span style={{ color: 'var(--accent2)' }}><TerminalText text="faster" delay={1.0} /></span>
       </motion.h1>
 
       <motion.p 
