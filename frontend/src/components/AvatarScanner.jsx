@@ -1,13 +1,45 @@
 import { motion } from 'framer-motion'
 
 export default function AvatarScanner({ matchedSkills = [], missingSkills = [] }) {
-  // Spreads skills in an arch over the avatar
+  let maxR = 90;
+  let tempTotal = matchedSkills.length;
+  let ringCap = 4;
+  while(tempTotal > ringCap) {
+    tempTotal -= ringCap;
+    ringCap += 3;
+    maxR += 45;
+  }
+  const containerHeight = Math.max(350, maxR + 180);
+
+  // Spreads skills in an expanding concentric arch
   const spreadAroundTop = (index, total) => {
-    const angle = (Math.PI / (total + 1)) * (index + 1)
-    const radius = 120
+    let r = 90;
+    let capacity = 4;
+    let prevNodes = 0;
+    let ringIndex = 0;
+    
+    while (index >= prevNodes + capacity) {
+      prevNodes += capacity;
+      ringIndex++;
+      r += 45; // expand radius outwards
+      capacity += 3; // each ring holds more
+    }
+    
+    const posInRing = index - prevNodes;
+    const itemsInRing = Math.min(capacity, total - prevNodes);
+    
+    const angleRange = 120 + (ringIndex * 15);
+    const startAngle = 270 - (angleRange / 2);
+    const angle = itemsInRing === 1 ? 270 : startAngle + (angleRange / (itemsInRing - 1)) * posInRing;
+    
+    const rad = (angle * Math.PI) / 180;
+    
+    // Stagger slightly on the Y axis to further prevent horizontal collisions on long words
+    const staggerY = (posInRing % 2 === 0) ? -12 : 12;
+
     return {
-      x: -Math.cos(angle) * radius,
-      y: -Math.sin(angle) * (radius * 0.6) - 30
+      x: Math.cos(rad) * r,
+      y: (Math.sin(rad) * r) + staggerY
     }
   }
 
@@ -18,7 +50,7 @@ export default function AvatarScanner({ matchedSkills = [], missingSkills = [] }
 
   return (
     <div style={{
-      position: 'relative', width: '100%', height: 350,
+      position: 'relative', width: '100%', height: containerHeight,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       marginTop: 20, marginBottom: 80, overflow: 'hidden'
     }}>
