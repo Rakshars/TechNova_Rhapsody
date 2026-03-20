@@ -1,9 +1,16 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 
 export default function UploadZone({ label, subLabel, accept, file, onFile }) {
   const inputRef = useRef(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [scanComplete, setScanComplete] = useState(false)
+
+  useEffect(() => {
+    if (file) {
+      setScanComplete(false)
+    }
+  }, [file])
 
   const handleChange = (e) => { if (e.target.files[0]) onFile(e.target.files[0]) }
   const handleDrop = (e) => { 
@@ -23,8 +30,8 @@ export default function UploadZone({ label, subLabel, accept, file, onFile }) {
       onClick={() => inputRef.current.click()}
       animate={{
         scale: isDragging ? 1.02 : 1,
-        borderColor: isDragging || file ? 'rgba(74,240,196,0.8)' : 'rgba(255,255,255,0.07)',
-        backgroundColor: file ? 'rgba(74,240,196,0.05)' : isDragging ? 'rgba(74,240,196,0.03)' : 'rgba(255,255,255,0.04)'
+        borderColor: isDragging ? 'rgba(74,240,196,0.8)' : file ? (scanComplete ? 'rgba(123,97,255,0.8)' : 'rgba(74,240,196,0.8)') : 'rgba(255,255,255,0.07)',
+        backgroundColor: file ? (scanComplete ? 'rgba(123,97,255,0.05)' : 'rgba(74,240,196,0.05)') : isDragging ? 'rgba(74,240,196,0.03)' : 'rgba(255,255,255,0.04)'
       }}
       transition={{ type: "spring", stiffness: 300, damping: 20 }}
       whileHover={{ y: -4 }}
@@ -41,13 +48,53 @@ export default function UploadZone({ label, subLabel, accept, file, onFile }) {
       <div style={{ position: 'absolute', bottom: 12, left: 12, width: 8, height: 8, borderBottom: '2px solid var(--muted)', borderLeft: '2px solid var(--muted)', opacity: 0.5 }} />
       <div style={{ position: 'absolute', bottom: 12, right: 12, width: 8, height: 8, borderBottom: '2px solid var(--muted)', borderRight: '2px solid var(--muted)', opacity: 0.5 }} />
 
+      {file && (
+        <motion.div
+          whileHover={{ scale: 1.1, backgroundColor: 'rgba(255,107,107,0.15)', color: 'var(--accent3)' }}
+          whileTap={{ scale: 0.95 }}
+          onClick={(e) => {
+            e.stopPropagation()
+            onFile(null)
+            setScanComplete(false)
+          }}
+          style={{
+            position: 'absolute', top: 16, right: 16, width: 32, height: 32,
+            borderRadius: 8, background: 'var(--card)', border: '1px solid var(--border)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', zIndex: 20, color: 'var(--muted)', transition: 'color 0.2s'
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 6h18" />
+            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+          </svg>
+        </motion.div>
+      )}
+
       {/* AI Scanning Lazer on Hover/Drag */}
-      {(isDragging || file) && (
+      {isDragging && !file && (
          <motion.div
            initial={{ top: 0, opacity: 0 }}
            animate={{ top: ['0%', '100%', '0%'], opacity: 1 }}
-           transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+           transition={{ duration: 2.2, repeat: Infinity, ease: 'linear' }}
            style={{ position: 'absolute', left: 0, right: 0, height: 1, background: 'var(--accent)', boxShadow: '0 0 10px var(--accent)', zIndex: 10 }}
+         />
+      )}
+      {file && !scanComplete && (
+         <motion.div
+           initial={{ top: 0, opacity: 0 }}
+           animate={{ top: ['0%', '100%', '0%'], opacity: 1 }}
+           transition={{ duration: 2.2, repeat: 1, ease: 'linear' }}
+           onAnimationComplete={() => setScanComplete(true)}
+           style={{ position: 'absolute', left: 0, right: 0, height: 1, background: 'var(--accent)', boxShadow: '0 0 10px var(--accent)', zIndex: 10 }}
+         />
+      )}
+      {file && scanComplete && (
+         <motion.div
+           initial={{ opacity: 0 }}
+           animate={{ opacity: 1 }}
+           style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, background: 'var(--accent2)', boxShadow: '0 0 15px var(--accent2)', zIndex: 10 }}
          />
       )}
 
@@ -67,8 +114,8 @@ export default function UploadZone({ label, subLabel, accept, file, onFile }) {
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           style={{
-            marginTop: 10, fontSize: '0.78rem', color: 'var(--accent)',
-            background: 'rgba(74,240,196,0.1)', padding: '4px 10px',
+            marginTop: 10, fontSize: '0.78rem', color: scanComplete ? 'var(--accent2)' : 'var(--accent)',
+            background: scanComplete ? 'rgba(123,97,255,0.1)' : 'rgba(74,240,196,0.1)', padding: '4px 10px',
             borderRadius: 100, display: 'inline-block',
             maxWidth: '100%', overflow: 'hidden',
             textOverflow: 'ellipsis', whiteSpace: 'nowrap'

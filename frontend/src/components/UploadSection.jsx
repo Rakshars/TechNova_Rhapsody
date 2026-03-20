@@ -7,8 +7,11 @@ export default function UploadSection({ files, onFile, onAnalyze, disabled }) {
   const xSpring = useSpring(x, { stiffness: 150, damping: 15, mass: 0.1 })
   const ySpring = useSpring(y, { stiffness: 150, damping: 15, mass: 0.1 })
 
+  const isMissingFiles = !files.resume || !files.jd
+  const isButtonDisabled = disabled || isMissingFiles
+
   const handleMouseMove = (e) => {
-    if (disabled) return
+    if (isButtonDisabled) return
     const rect = e.currentTarget.getBoundingClientRect()
     const centerX = rect.left + rect.width / 2
     const centerY = rect.top + rect.height / 2
@@ -40,21 +43,21 @@ export default function UploadSection({ files, onFile, onAnalyze, disabled }) {
       
       <motion.button
         onClick={onAnalyze}
-        disabled={disabled}
+        disabled={isButtonDisabled}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
-        whileHover={{ scale: disabled ? 1 : 1.02 }}
-        whileTap={{ scale: disabled ? 1 : 0.98 }}
+        whileHover={{ scale: isButtonDisabled ? 1 : 1.02 }}
+        whileTap={{ scale: isButtonDisabled ? 1 : 0.98 }}
         style={{
-          x: disabled ? 0 : xMove,
-          y: disabled ? 0 : yMove,
+          x: isButtonDisabled ? 0 : xMove,
+          y: isButtonDisabled ? 0 : yMove,
           width: '100%', padding: '18px 32px',
           background: 'linear-gradient(135deg, #4af0c4 0%, #2dd4a0 100%)',
           color: '#050a14', fontFamily: 'Syne, sans-serif', fontWeight: 700,
           fontSize: '1rem', letterSpacing: '0.03em', border: 'none',
-          borderRadius: 14, cursor: disabled ? 'not-allowed' : 'pointer',
-          opacity: disabled ? 0.5 : 1, marginBottom: 48,
-          boxShadow: disabled ? 'none' : '0 8px 30px rgba(74,240,196,0.15)',
+          borderRadius: 14, cursor: isButtonDisabled ? 'not-allowed' : 'pointer',
+          opacity: isButtonDisabled ? 0.5 : 1, marginBottom: 48,
+          boxShadow: isButtonDisabled ? 'none' : '0 8px 30px rgba(74,240,196,0.15)',
         }}
       >
         <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>

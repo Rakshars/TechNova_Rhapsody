@@ -171,8 +171,8 @@ export default function Hero() {
           position: 'relative', zIndex: 2
         }}
       >
-        Upload your resume and a job description. Our engine maps exactly what you know,
-        what you don't, and how to get there — in seconds.
+        Upload your resume and target job description. Our advanced engine instantly analyzes your profile,
+        identifies critical skill gaps, and generates personalized roadmap to accelerate your career.
       </motion.p>
     </section>
   )

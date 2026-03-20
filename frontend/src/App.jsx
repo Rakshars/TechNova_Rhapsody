@@ -19,6 +19,7 @@ export default function App() {
   const [loadingMsg, setLoadingMsg] = useState(LOADING_MESSAGES[0])
   const [error, setError] = useState('')
   const resultsRef = useRef(null)
+  const loadingRef = useRef(null)
 
   // Framer Motion Cursor State
   const cursorX = useMotionValue(-100)
@@ -92,6 +93,7 @@ export default function App() {
       return
     }
     setPhase('loading')
+    setTimeout(() => loadingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80)
     let idx = 0
     setLoadingMsg(LOADING_MESSAGES[0])
     const interval = setInterval(() => {
@@ -132,7 +134,15 @@ export default function App() {
             ? 'Advanced topic — directly targeted by the job description.'
             : 'Core skill — bridges your current knowledge to the role.',
         })),
-        reasoning: (raw.reasoning ?? []).map(r => r.reason ?? '').filter(Boolean).join(' '),
+        reasoning: Object.entries((raw.reasoning ?? []).reduce((acc, r) => {
+          if (r.reason) {
+            acc[r.reason] = acc[r.reason] || []
+            if (r.skill) acc[r.reason].push(r.skill)
+          }
+          return acc
+        }, {})).map(([reason, skills]) => 
+          skills.length > 0 ? `${skills.join(', ')} — ${reason}` : reason
+        ),
       }
 
       clearInterval(interval)
@@ -170,7 +180,7 @@ export default function App() {
           onAnalyze={runAnalysis}
           disabled={phase === 'loading'}
         />
-        {phase === 'loading' && <LoadingState message={loadingMsg} />}
+        {phase === 'loading' && <div ref={loadingRef}><LoadingState message={loadingMsg} /></div>}
         {phase === 'results' && results && (
           <div ref={resultsRef}>
             <ResultsSection data={results} />

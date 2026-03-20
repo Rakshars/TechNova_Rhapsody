@@ -5,10 +5,8 @@ export default function ReasoningBox({ text }) {
   const ref = useRef(null)
   const isInView = useInView(ref, { once: true, margin: "-40px" })
 
-  // Accept either a plain string or an array of {skill, status, reason} objects
-  const content = Array.isArray(text)
-    ? text.map(r => r.reason ?? '').filter(Boolean).join(' ')
-    : (text ?? '')
+  // Ensure content is an array
+  const contentArray = Array.isArray(text) ? text : [text ?? '']
 
   const container = {
     hidden: { opacity: 0 },
@@ -43,22 +41,32 @@ export default function ReasoningBox({ text }) {
         lineHeight: 1, pointerEvents: 'none', zIndex: 0
       }}>"</div>
       
-      <motion.div 
+      <motion.ul 
         variants={container}
         initial="hidden"
         animate={isInView ? "visible" : "hidden"}
         style={{ 
           fontSize: '0.95rem', lineHeight: 1.8, fontWeight: 300, 
-          position: 'relative', display: 'flex', flexWrap: 'wrap', 
-          gap: '2px 5px', zIndex: 1 
+          position: 'relative', zIndex: 1, listStyleType: 'none',
+          display: 'flex', flexDirection: 'column', gap: 16
         }}
       >
-        {content.split(" ").map((word, index) => (
-          <motion.span key={index} variants={child} style={{ display: 'inline-block', borderRadius: 3, padding: '0 1px' }}>
-            {word}
-          </motion.span>
-        ))}
-      </motion.div>
+        {contentArray.map((sentence, sIdx) => {
+          if (!sentence) return null
+          return (
+            <motion.li key={sIdx} style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+              <motion.span variants={child} style={{ color: 'var(--accent)', marginTop: 2, fontSize: '0.8rem' }}>✦</motion.span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 5px', flex: 1 }}>
+                {sentence.split(" ").map((word, wIdx) => (
+                  <motion.span key={wIdx} variants={child} style={{ display: 'inline-block', borderRadius: 3, padding: '0 1px' }}>
+                    {word}
+                  </motion.span>
+                ))}
+              </div>
+            </motion.li>
+          )
+        })}
+      </motion.ul>
     </div>
   )
 }
