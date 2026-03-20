@@ -6,7 +6,6 @@ import Hero from './components/Hero'
 import UploadSection from './components/UploadSection'
 import LoadingState from './components/LoadingState'
 import ResultsSection from './components/ResultsSection'
-import { MOCK_RESPONSE } from './mockData'
 
 const LOADING_MESSAGES = [
   'Parsing resume...', 'Extracting skills...', 'Scanning job description...',
@@ -101,20 +100,33 @@ export default function App() {
     }, 900)
 
     try {
-      // ── REAL INTEGRATION POINT ──────────────────────────────
-      // When backend is ready, replace the two lines below with:
-      //
-      // const formData = new FormData()
-      // formData.append('resume', files.resume)
-      // formData.append('jd', files.jd)
-      // const resp = await fetch('http://localhost:5000/analyze', {
-      //   method: 'POST', body: formData
-      // })
-      // if (!resp.ok) throw new Error('Backend error')
-      // const data = await resp.json()
-      // ────────────────────────────────────────────────────────
-      await new Promise(r => setTimeout(r, 3200))
-      const data = MOCK_RESPONSE
+      const formData = new FormData()
+      formData.append('resume', files.resume)
+      formData.append('jd_file', files.jd)
+      formData.append('mode', 'semantic')
+
+      const resp = await fetch('/api/upload', { method: 'POST', body: formData })
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}))
+        throw new Error(err.detail || `Server error ${resp.status}`)
+      }
+      const raw = await resp.json()
+
+      // Map backend response shape → frontend component shape
+      const data = {
+        skills_matched: raw.user_skills ?? [],
+        skills_missing: raw.missing_skills ?? [],
+        match_score: raw.match_score ?? 0,
+        learning_path: (raw.learning_path ?? []).map((skill, i) => ({
+          step: i + 1,
+          title: skill,
+          description: `Add ${skill} to your skill set to meet the job requirements.`,
+          duration: '1–2 weeks',
+          type: 'Skill Gap',
+          priority: i < 3 ? 'High' : 'Medium',
+        })),
+        reasoning: (raw.reasoning ?? []).map(r => r.reason ?? '').filter(Boolean).join(' '),
+      }
 
       clearInterval(interval)
       setResults(data)
@@ -122,8 +134,8 @@ export default function App() {
       setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth' }), 200)
     } catch (err) {
       clearInterval(interval)
-      setError('Analysis failed. Please check your files and try again.')
-      setTimeout(() => setError(''), 4000)
+      setError(`Analysis failed: ${err.message}`)
+      setTimeout(() => setError(''), 5000)
       setPhase('idle')
     }
   }

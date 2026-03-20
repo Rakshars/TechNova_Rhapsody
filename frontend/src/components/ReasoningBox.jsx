@@ -5,7 +5,10 @@ export default function ReasoningBox({ text }) {
   const ref = useRef(null)
   const isInView = useInView(ref, { once: true, margin: "-40px" })
 
-  const words = text.split(" ")
+  // Accept either a plain string or an array of {skill, status, reason} objects
+  const content = Array.isArray(text)
+    ? text.map(r => r.reason ?? '').filter(Boolean).join(' ')
+    : (text ?? '')
 
   const container = {
     hidden: { opacity: 0 },
@@ -50,7 +53,7 @@ export default function ReasoningBox({ text }) {
           gap: '2px 5px', zIndex: 1 
         }}
       >
-        {words.map((word, index) => (
+        {content.split(" ").map((word, index) => (
           <motion.span key={index} variants={child} style={{ display: 'inline-block', borderRadius: 3, padding: '0 1px' }}>
             {word}
           </motion.span>

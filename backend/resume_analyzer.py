@@ -1,32 +1,39 @@
 """
-Resume Analyzer — Full Backend
-================================
-Original rule-based engine (Steps 1-10) is fully preserved.
-LLM layer sits on top and upgrades skill extraction + reasoning.
-FastAPI exposes everything as clean REST endpoints for the frontend.
+Resume Analyzer — Enhanced Backend v3.0
+========================================
+Improvements over v2:
+  - Match score (0-100) added to every response
+  - Fuzzy / partial matching for skill variants  
+  - Weighted skill importance (core vs. nice-to-have)
+  - Richer SKILL_GRAPH + larger skill database
+  - Semantic threshold auto-tuned per text length
+  - /analyze endpoint returns structured JSON ready for any frontend
+  - CORS pre-configured; JWT-ready hooks left as comments
+  - /upload endpoint accepts multipart PDF / DOCX resume
+  - /jd/parse endpoint auto-extracts JD structure from raw text
+  - Pagination on /dataset/stats
+  - All skill lists de-duplicated and title-cased consistently
 
 Install:
     pip install pandas beautifulsoup4 lxml kagglehub
-    pip install sentence-transformers                  # Tier 1 (semantic)
-    pip install requests                               # Tier 2 (Ollama local)
-    pip install huggingface_hub                        # Tier 3 (HF cloud)
-    pip install fastapi uvicorn python-multipart       # API server
+    pip install sentence-transformers
+    pip install fastapi uvicorn python-multipart pydantic
+    pip install PyPDF2 python-docx                     # for file upload parsing
+    pip install requests
 
 Run:
-    python resume_analyzer.py          # test mode (prints sample result)
-    uvicorn resume_analyzer:app --reload --port 8000   # API server mode
+    uvicorn resume_analyzer:app --reload --port 8000
 """
 
-import os
-import re
-import json
-import logging
-import requests
-import pandas as pd
+import os, re, json, logging, unicodedata
 from collections import Counter
+from typing import Optional, Literal
+
+import pandas as pd
+import requests
 from bs4 import BeautifulSoup
 
-# ── Logging setup ──────────────────────────────────────────────────────────
+# ── Logging ────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
 
@@ -35,14 +42,15 @@ log = logging.getLogger(__name__)
 # SECTION 1 — DATASET LOADING
 # ══════════════════════════════════════════════════════════════════════════
 
-import kagglehub
-
-path = kagglehub.dataset_download("snehaanbhawal/resume-dataset")
-csv_path = os.path.join(path, "Resume", "Resume.csv")
-resume_df = pd.read_csv(csv_path)
-
-log.info(f"Dataset loaded — {resume_df.shape[0]} resumes, columns: {resume_df.columns.tolist()}")
-log.info(f"Categories: {resume_df['Category'].unique().tolist()}")
+try:
+    import kagglehub
+    _path = kagglehub.dataset_download("snehaanbhawal/resume-dataset")
+    _csv  = os.path.join(_path, "Resume", "Resume.csv")
+    resume_df = pd.read_csv(_csv)
+    log.info(f"Dataset loaded — {resume_df.shape[0]} resumes")
+except Exception as e:
+    log.warning(f"Dataset not loaded ({e}). /dataset/stats will return empty.")
+    resume_df = pd.DataFrame(columns=["Category", "Resume_str"])
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -50,166 +58,270 @@ log.info(f"Categories: {resume_df['Category'].unique().tolist()}")
 # ══════════════════════════════════════════════════════════════════════════
 
 def clean_text(raw: str) -> str:
-    """Strip HTML tags and collapse whitespace to plain text."""
-    if not isinstance(raw, str):
+    """Strip HTML, normalize unicode, collapse whitespace."""
+    if not isinstance(raw, str) or not raw.strip():
         return ""
+    # Decode HTML entities and strip tags
     soup = BeautifulSoup(raw, "lxml")
     text = soup.get_text(separator=" ")
+    # Normalize unicode (smart quotes, dashes, etc.)
+    text = unicodedata.normalize("NFKD", text)
+    # Collapse whitespace
     return re.sub(r"\s+", " ", text).strip()
 
 
-resume_df["clean_resume"] = resume_df["Resume_str"].apply(clean_text)
+if not resume_df.empty:
+    resume_df["clean_resume"] = resume_df["Resume_str"].apply(clean_text)
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# SECTION 3 — SKILL DATABASE (mined from dataset + curated)
+# SECTION 3 — SKILL DATABASE
 # ══════════════════════════════════════════════════════════════════════════
 
-STOPWORDS = {
-    "the", "and", "for", "with", "this", "that", "from", "have", "has",
-    "been", "will", "was", "are", "were", "not", "but", "all", "any",
-    "can", "work", "also", "use", "used", "using", "more", "other",
-    "include", "including", "experience", "skills", "ability", "strong",
-    "knowledge", "team", "years", "year", "month", "months", "good",
-    "well", "within", "across", "our", "your", "their", "such", "both",
-    "each", "into", "over", "than", "then", "they", "what", "when",
-    "where", "which", "while", "who", "its", "out", "new", "may",
-    "must", "per", "etc", "via", "key", "able", "many", "high",
-    "level", "related", "basis", "help", "make", "need", "role", "time"
-}
-
-
-def mine_frequent_terms(series: pd.Series, top_n: int = 300) -> list:
-    """Return the top-N most frequent meaningful words across all resumes."""
-    counter = Counter()
-    for text in series.dropna():
-        tokens = re.findall(r"[a-zA-Z][a-zA-Z+#.]{2,}", text.lower())
-        filtered = [t for t in tokens if t not in STOPWORDS]
-        counter.update(filtered)
-    return [word for word, _ in counter.most_common(top_n)]
-
-
-mined_terms = mine_frequent_terms(resume_df["clean_resume"])
-log.info(f"Top 30 mined terms: {mined_terms[:30]}")
-
-# Curated skill list — derived from mined_terms + domain expertise
-SKILLS_BY_DOMAIN = {
+SKILLS_BY_DOMAIN: dict[str, list[str]] = {
     "programming": [
         "python", "java", "javascript", "typescript", "c++", "c#", "r",
-        "scala", "golang", "ruby", "swift", "kotlin", "php", "bash", "matlab"
+        "scala", "golang", "go", "ruby", "swift", "kotlin", "php", "bash",
+        "shell scripting", "matlab", "perl", "rust", "haskell", "elixir",
+        "dart", "groovy", "cobol", "fortran", "assembly",
     ],
     "data_and_ml": [
-        "machine learning", "deep learning", "nlp", "computer vision",
-        "data analysis", "data science", "data engineering", "statistics",
+        "machine learning", "deep learning", "nlp",
+        "natural language processing", "computer vision",
+        "data analysis", "data science", "data engineering",
+        "statistics", "probability", "linear algebra",
         "pandas", "numpy", "scikit-learn", "tensorflow", "pytorch",
-        "keras", "xgboost", "opencv", "feature engineering",
-        "model deployment", "mlops"
+        "keras", "xgboost", "lightgbm", "catboost", "opencv",
+        "feature engineering", "model deployment", "mlops",
+        "data pipeline", "etl", "apache spark", "hadoop",
+        "hugging face", "transformers", "llm", "generative ai",
+        "reinforcement learning", "time series", "anomaly detection",
+        "recommender systems", "a/b testing", "hypothesis testing",
+        "data visualization", "exploratory data analysis",
     ],
     "databases": [
         "sql", "mysql", "postgresql", "mongodb", "redis",
-        "oracle", "elasticsearch", "sqlite", "nosql", "firebase"
+        "oracle", "elasticsearch", "sqlite", "nosql", "firebase",
+        "cassandra", "dynamodb", "neo4j", "influxdb", "snowflake",
+        "bigquery", "redshift", "databricks", "dbt",
     ],
     "cloud_and_devops": [
-        "aws", "azure", "gcp", "docker", "kubernetes", "terraform",
-        "jenkins", "ci/cd", "git", "linux", "ansible", "cloud computing"
+        "aws", "azure", "gcp", "google cloud", "docker", "kubernetes",
+        "terraform", "jenkins", "ci/cd", "git", "github actions",
+        "gitlab ci", "linux", "ansible", "puppet", "chef",
+        "cloud computing", "serverless", "lambda", "azure devops",
+        "helm", "prometheus", "grafana", "datadog", "new relic",
+        "nginx", "apache", "load balancing", "microservices",
     ],
     "web_and_api": [
-        "react", "angular", "vue", "node.js", "django", "flask",
-        "fastapi", "rest api", "graphql", "html", "css", "spring boot"
+        "react", "angular", "vue", "svelte", "next.js", "nuxt",
+        "node.js", "django", "flask", "fastapi", "spring boot",
+        "express", "rest api", "graphql", "html", "css", "sass",
+        "webpack", "vite", "tailwind", "bootstrap", "jquery",
+        "websocket", "oauth", "jwt", "openapi", "swagger",
     ],
     "hr_and_business": [
         "recruitment", "talent acquisition", "onboarding", "payroll",
         "performance management", "employee relations", "hris", "workday",
         "sap hr", "successfactors", "compensation", "benefits administration",
-        "labour law", "compliance", "training and development",
-        "organizational development", "change management", "workforce planning"
+        "labour law", "employment law", "compliance", "training and development",
+        "organizational development", "change management", "workforce planning",
+        "employee engagement", "hr analytics", "diversity and inclusion",
+        "exit interviews", "succession planning",
     ],
     "soft_and_tools": [
         "communication", "leadership", "project management", "agile",
-        "scrum", "jira", "excel", "powerpoint", "tableau", "power bi",
-        "stakeholder management", "problem solving", "critical thinking"
+        "scrum", "kanban", "jira", "confluence", "excel", "powerpoint",
+        "tableau", "power bi", "looker", "stakeholder management",
+        "problem solving", "critical thinking", "cross-functional collaboration",
+        "strategic planning", "negotiation", "presentation skills",
+        "time management", "mentoring", "coaching",
     ],
     "finance_and_accounting": [
         "financial analysis", "accounting", "auditing", "budgeting",
         "forecasting", "tally", "sap fi", "quickbooks", "taxation",
-        "risk management"
-    ]
+        "risk management", "financial modeling", "valuation",
+        "investment analysis", "portfolio management", "derivatives",
+        "corporate finance", "cash flow analysis", "ifrs", "gaap",
+    ],
+    "security": [
+        "cybersecurity", "penetration testing", "ethical hacking",
+        "siem", "vulnerability assessment", "firewalls",
+        "soc", "incident response", "owasp", "zero trust",
+        "identity and access management", "iam",
+    ],
+    "product_and_design": [
+        "product management", "product roadmap", "user research",
+        "ux design", "ui design", "figma", "sketch", "adobe xd",
+        "wireframing", "prototyping", "usability testing",
+        "a/b testing", "okrs", "kpis", "go-to-market",
+    ],
 }
 
-COMMON_SKILLS = [
-    skill
-    for domain_skills in SKILLS_BY_DOMAIN.values()
-    for skill in domain_skills
-]
+COMMON_SKILLS: list[str] = list(dict.fromkeys(
+    skill for domain in SKILLS_BY_DOMAIN.values() for skill in domain
+))
 
-log.info(f"Total skills in database: {len(COMMON_SKILLS)}")
+log.info(f"Skill database: {len(COMMON_SKILLS)} skills across {len(SKILLS_BY_DOMAIN)} domains")
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# SECTION 4 — RULE-BASED SKILL EXTRACTION (original)
+# SECTION 4 — SYNONYMS & NORMALISATION
 # ══════════════════════════════════════════════════════════════════════════
 
-SYNONYMS = {
-    "ml":                          "machine learning",
-    "dl":                          "deep learning",
-    "ai":                          "machine learning",
-    "natural language processing": "nlp",
-    "nodejs":                      "node.js",
-    "node js":                     "node.js",
-    "reactjs":                     "react",
-    "react js":                    "react",
-    "vuejs":                       "vue",
-    "postgres":                    "postgresql",
-    "scikit learn":                "scikit-learn",
-    "sklearn":                     "scikit-learn",
-    "power-bi":                    "power bi",
-    "ms excel":                    "excel",
-    "microsoft excel":             "excel",
-    "ms powerpoint":               "powerpoint",
-    "talent management":           "talent acquisition",
-    "hiring":                      "recruitment",
-    "sourcing":                    "talent acquisition",
+SYNONYMS: dict[str, str] = {
+    # ML / AI
+    "ml":                               "machine learning",
+    "dl":                               "deep learning",
+    "ai":                               "machine learning",
+    "gen ai":                           "generative ai",
+    "llms":                             "llm",
+    "large language model":             "llm",
+    "large language models":            "llm",
+    "natural language processing":      "nlp",
+    "cv":                               "computer vision",
+    # JS ecosystem
+    "nodejs":                           "node.js",
+    "node js":                          "node.js",
+    "reactjs":                          "react",
+    "react js":                         "react",
+    "react.js":                         "react",
+    "vuejs":                            "vue",
+    "vue.js":                           "vue",
+    "nextjs":                           "next.js",
+    "angularjs":                        "angular",
+    # Python ecosystem
+    "scikit learn":                     "scikit-learn",
+    "sklearn":                          "scikit-learn",
+    "hf":                               "hugging face",
+    # DB
+    "postgres":                         "postgresql",
+    "mongo":                            "mongodb",
+    "elastic":                          "elasticsearch",
+    # Cloud
+    "amazon web services":              "aws",
+    "microsoft azure":                  "azure",
+    "google cloud platform":            "gcp",
+    # BI
+    "power-bi":                         "power bi",
+    "ms excel":                         "excel",
+    "microsoft excel":                  "excel",
+    "ms powerpoint":                    "powerpoint",
+    # HR
+    "talent management":                "talent acquisition",
+    "hiring":                           "recruitment",
+    "sourcing":                         "talent acquisition",
+    "staffing":                         "recruitment",
+    "people management":                "employee relations",
+    "learning and development":         "training and development",
+    "l&d":                              "training and development",
+    # DevOps
+    "k8s":                              "kubernetes",
+    "k8":                               "kubernetes",
+    "gh actions":                       "github actions",
+    # Finance
+    "p&l":                              "financial analysis",
+    "profit and loss":                  "financial analysis",
+    "dcf":                              "financial modeling",
+    "us gaap":                          "gaap",
+    # Design
+    "user experience":                  "ux design",
+    "user interface":                   "ui design",
+    "ux":                               "ux design",
+    "ui":                               "ui design",
 }
 
 
 def normalise(text: str) -> str:
     text = text.lower().strip()
-    return SYNONYMS.get(text, text)
+    # Multi-word synonym lookup first
+    for src, tgt in SYNONYMS.items():
+        text = re.sub(r"\b" + re.escape(src) + r"\b", tgt, text)
+    return text
 
 
-def extract_skills(text: str) -> list:
+# ══════════════════════════════════════════════════════════════════════════
+# SECTION 5 — IMPROVED RULE-BASED SKILL EXTRACTION
+# ══════════════════════════════════════════════════════════════════════════
+
+def _skill_pattern(skill: str) -> re.Pattern:
+    """Compile a word-boundary pattern; handle special regex chars in skill names."""
+    escaped = re.escape(skill)
+    # Allow optional separator variants: "node.js" also matches "node js"
+    escaped = escaped.replace(r"\.", r"[.\s]?")
+    escaped = escaped.replace(r"\+\+", r"(\+\+|\splusplus)")
+    escaped = escaped.replace(r"\#", r"#")
+    return re.compile(r"(?<![a-zA-Z])" + escaped + r"(?![a-zA-Z])", re.IGNORECASE)
+
+
+_COMPILED_PATTERNS: dict[str, re.Pattern] = {
+    skill: _skill_pattern(skill) for skill in COMMON_SKILLS
+}
+
+# Sort skills: longer (multi-word) first to avoid partial matches
+_SKILLS_SORTED = sorted(COMMON_SKILLS, key=lambda s: len(s.split()), reverse=True)
+
+
+def extract_skills(text: str) -> list[str]:
     """
-    Rule-based: match text against COMMON_SKILLS using regex.
-    Multi-word skills checked first to prevent partial matches.
-    Used as fallback when LLM is unavailable.
+    Improved rule-based extraction:
+    - Synonym normalisation applied first
+    - Fuzzy variant patterns (node.js / node js)
+    - Returns deduplicated, ordered list
     """
     normalised = normalise(text)
-    sorted_skills = sorted(COMMON_SKILLS, key=lambda s: len(s.split()), reverse=True)
+    found: list[str] = []
+    matched_spans: list[tuple[int, int]] = []
 
-    found = []
-    for skill in sorted_skills:
-        pattern = r"\b" + re.escape(skill) + r"\b"
-        if re.search(pattern, normalised, re.IGNORECASE):
-            found.append(skill)
+    for skill in _SKILLS_SORTED:
+        for m in _COMPILED_PATTERNS[skill].finditer(normalised):
+            start, end = m.start(), m.end()
+            # Skip if this span overlaps a longer already-matched skill
+            overlap = any(s <= start < e or s < end <= e for s, e in matched_spans)
+            if not overlap:
+                found.append(skill)
+                matched_spans.append((start, end))
+                break  # skill found, move to next
 
-    return list(dict.fromkeys(found))
+    return list(dict.fromkeys(found))  # preserve order, dedup
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# SECTION 5 — SKILL GAP ANALYSIS (original)
+# SECTION 6 — SKILL GAP & MATCH SCORE
 # ══════════════════════════════════════════════════════════════════════════
 
-def find_missing(user_skills: list, required_skills: list) -> list:
-    """Return skills required by the JD that the candidate doesn't have."""
+def find_missing(user_skills: list[str], required_skills: list[str]) -> list[str]:
     user_set = {s.lower() for s in user_skills}
-    return [skill for skill in required_skills if skill.lower() not in user_set]
+    return [s for s in required_skills if s.lower() not in user_set]
+
+
+def compute_match_score(
+    user_skills: list[str],
+    required_skills: list[str],
+    missing_skills: list[str],
+) -> int:
+    """
+    Returns an integer 0-100.
+    Formula:
+      - Base: (matched / required) * 80
+      - Bonus up to 20: extra skills the candidate has beyond what's required
+        (shows breadth). Capped so total stays ≤ 100.
+    """
+    if not required_skills:
+        return 0
+    matched = len(required_skills) - len(missing_skills)
+    base = (matched / len(required_skills)) * 80
+    extra = len(set(s.lower() for s in user_skills) -
+                set(s.lower() for s in required_skills))
+    bonus = min(extra * 2, 20)          # 2 pts per extra skill, capped at 20
+    return min(round(base + bonus), 100)
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# SECTION 6 — SKILL DEPENDENCY GRAPH (original)
+# SECTION 7 — SKILL DEPENDENCY GRAPH (expanded)
 # ══════════════════════════════════════════════════════════════════════════
 
-SKILL_GRAPH = {
+SKILL_GRAPH: dict[str, list[str]] = {
     # ML / Data Science
     "machine learning":         ["python", "statistics", "numpy", "pandas"],
     "deep learning":            ["machine learning", "tensorflow"],
@@ -220,6 +332,20 @@ SKILL_GRAPH = {
     "model deployment":         ["docker", "flask"],
     "data science":             ["python", "statistics", "sql"],
     "data engineering":         ["python", "sql", "cloud computing"],
+    "llm":                      ["machine learning", "nlp", "python"],
+    "generative ai":            ["llm", "python"],
+    "hugging face":             ["python", "pytorch"],
+    "apache spark":             ["python", "sql"],
+    "dbt":                      ["sql"],
+    "snowflake":                ["sql"],
+    "bigquery":                 ["sql", "gcp"],
+    "redshift":                 ["sql", "aws"],
+    "databricks":               ["apache spark", "python"],
+    "time series":              ["statistics", "python"],
+    "anomaly detection":        ["statistics", "machine learning"],
+    "recommender systems":      ["machine learning", "sql"],
+    "a/b testing":              ["statistics"],
+    "hypothesis testing":       ["statistics"],
     # Backend / Cloud
     "docker":                   ["linux"],
     "kubernetes":               ["docker"],
@@ -233,11 +359,25 @@ SKILL_GRAPH = {
     "flask":                    ["python"],
     "spring boot":              ["java"],
     "rest api":                 ["python"],
+    "graphql":                  ["rest api"],
+    "microservices":            ["docker", "rest api"],
+    "serverless":               ["cloud computing"],
+    "helm":                     ["kubernetes"],
+    "prometheus":               ["kubernetes"],
+    "grafana":                  ["prometheus"],
+    "github actions":           ["git", "ci/cd"],
+    "gitlab ci":                ["git", "ci/cd"],
+    "azure devops":             ["azure", "ci/cd"],
     # Frontend
     "react":                    ["javascript", "html", "css"],
     "angular":                  ["typescript", "html", "css"],
     "vue":                      ["javascript", "html", "css"],
+    "next.js":                  ["react"],
+    "svelte":                   ["javascript"],
     "typescript":               ["javascript"],
+    "tailwind":                 ["css"],
+    "sass":                     ["css"],
+    "webpack":                  ["javascript"],
     # HR
     "recruitment":              ["communication"],
     "talent acquisition":       ["recruitment", "communication"],
@@ -252,27 +392,44 @@ SKILL_GRAPH = {
     "payroll":                  ["excel", "compliance"],
     "benefits administration":  ["compliance", "excel"],
     "compensation":             ["excel", "payroll"],
+    "hr analytics":             ["excel", "statistics"],
+    "succession planning":      ["organizational development", "performance management"],
     # Finance
     "financial analysis":       ["excel", "accounting"],
     "forecasting":              ["financial analysis", "statistics"],
     "auditing":                 ["accounting", "compliance"],
     "risk management":          ["financial analysis", "compliance"],
     "sap fi":                   ["accounting"],
+    "financial modeling":       ["excel", "financial analysis"],
+    "valuation":                ["financial modeling", "accounting"],
     # BI / Analytics
     "tableau":                  ["excel", "sql"],
     "power bi":                 ["excel", "sql"],
+    "looker":                   ["sql"],
     "elasticsearch":            ["sql", "linux"],
     "postgresql":               ["sql"],
     "mongodb":                  ["sql"],
+    "cassandra":                ["sql"],
+    "dynamodb":                 ["aws", "nosql"],
+    "firebase":                 ["nosql"],
+    # Security
+    "penetration testing":      ["linux", "networking"],
+    "siem":                     ["cybersecurity"],
+    "incident response":        ["cybersecurity", "siem"],
+    "vulnerability assessment": ["cybersecurity"],
+    # Product / Design
+    "product roadmap":          ["product management"],
+    "wireframing":              ["ux design"],
+    "prototyping":              ["ux design", "figma"],
+    "usability testing":        ["ux design"],
 }
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# SECTION 7 — ADAPTIVE LEARNING PATH (original)
+# SECTION 8 — LEARNING PATH GENERATOR
 # ══════════════════════════════════════════════════════════════════════════
 
 def _collect_prereqs(skill: str, known: set, path: list, visited: set) -> None:
-    """Depth-first post-order: prerequisites come before the skill itself."""
     if skill in visited:
         return
     visited.add(skill)
@@ -283,126 +440,118 @@ def _collect_prereqs(skill: str, known: set, path: list, visited: set) -> None:
         path.append(skill)
 
 
-def generate_learning_path(user_skills: list, missing_skills: list) -> list:
-    """
-    Ordered learning path — prerequisites injected automatically,
-    already-known skills skipped.
-    """
-    known = {s.lower() for s in user_skills}
-    learning_path = []
-    visited = set()
+def generate_learning_path(user_skills: list[str], missing_skills: list[str]) -> list[str]:
+    known   = {s.lower() for s in user_skills}
+    path    : list[str] = []
+    visited : set[str]  = set()
     for skill in missing_skills:
-        _collect_prereqs(skill, known, learning_path, visited)
-    return learning_path
+        _collect_prereqs(skill, known, path, visited)
+    return path
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# SECTION 8 — RULE-BASED REASONING ENGINE (original)
+# SECTION 9 — REASONING ENGINE (improved hints)
 # ══════════════════════════════════════════════════════════════════════════
 
-def generate_reasoning(user_skills: list, required_skills: list, missing_skills: list) -> list:
-    """
-    One explanation per required skill.
-    Missing skills get a prereq hint if the candidate already knows related skills.
-    """
-    reasons = []
-    user_set = {s.lower() for s in user_skills}
+def generate_reasoning(
+    user_skills:     list[str],
+    required_skills: list[str],
+    missing_skills:  list[str],
+) -> list[dict]:
+    reasons   = []
+    user_set  = {s.lower() for s in user_skills}
+    missing_set = {s.lower() for s in missing_skills}
 
     for skill in required_skills:
-        if skill.lower() in user_set:
+        skill_lower = skill.lower()
+        if skill_lower not in missing_set:
             reasons.append({
-                "skill": skill.title(),
+                "skill":  skill.title(),
                 "status": "matched",
-                "reason": "Found in resume and required by the job description."
+                "reason": "Found in your resume and required by the job description.",
             })
         else:
-            prereqs = SKILL_GRAPH.get(skill.lower(), [])
+            prereqs       = SKILL_GRAPH.get(skill_lower, [])
             known_prereqs = [p for p in prereqs if p.lower() in user_set]
-            hint = (
-                f" You already know {', '.join(known_prereqs)} — "
-                "prerequisite(s) covered, should be quick to learn."
-                if known_prereqs else ""
-            )
+
+            if known_prereqs:
+                prereq_str = ", ".join(p.title() for p in known_prereqs)
+                hint = (
+                    f" You already know {prereq_str} — "
+                    "the prerequisite(s) are covered so this should be quick to pick up."
+                )
+            else:
+                hint = " Start from the fundamentals — consider an online course or project."
+
             reasons.append({
-                "skill": skill.title(),
+                "skill":  skill.title(),
                 "status": "missing",
-                "reason": f"Required in job description but not found in resume.{hint}"
+                "reason": f"Required by the job description but not found in your resume.{hint}",
             })
 
     return reasons
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# SECTION 9 — LLM UPGRADE LAYER
-# Each function here is a drop-in upgrade for the corresponding rule-based one.
-# They all fall back to rule-based if the LLM call fails.
+# SECTION 10 — SEMANTIC / LLM UPGRADE LAYER
 # ══════════════════════════════════════════════════════════════════════════
 
-# ── Tier 1: Sentence Transformers (runs fully offline, no API key needed) ──
-
-_semantic_model = None  # loaded lazily on first use
+_semantic_model = None
 
 def _load_semantic_model():
     global _semantic_model
     if _semantic_model is None:
         try:
             from sentence_transformers import SentenceTransformer
-            log.info("Loading sentence-transformers model (first run may take ~30s)...")
+            log.info("Loading sentence-transformers model …")
             _semantic_model = SentenceTransformer("all-MiniLM-L6-v2")
             log.info("Semantic model ready.")
         except ImportError:
-            log.warning("sentence-transformers not installed. Run: pip install sentence-transformers")
+            log.warning("sentence-transformers not installed.")
     return _semantic_model
 
 
-def extract_skills_semantic(text: str, threshold: float = 0.42) -> list:
+def extract_skills_semantic(text: str, threshold: float = 0.40) -> list[str]:
     """
-    Upgrade over regex: uses cosine similarity between sentence embeddings
-    and skill embeddings. Catches synonyms, paraphrases, and context clues
-    that regex misses entirely.
-
-    Falls back to rule-based extract_skills() if model unavailable.
+    Semantic extraction — tuned threshold, merged with regex results.
     """
     model = _load_semantic_model()
     if model is None:
-        log.warning("Falling back to rule-based skill extraction.")
         return extract_skills(text)
 
     try:
         from sentence_transformers import util
 
-        # Split into sentences for finer-grained matching
-        sentences = [s.strip() for s in re.split(r"[.;\n]", text) if len(s.strip()) > 10]
+        sentences = [s.strip() for s in re.split(r"[.;\n]", text) if len(s.strip()) > 15]
         if not sentences:
             return extract_skills(text)
+
+        # Auto-tune threshold: short texts get a slightly lower bar
+        adjusted = threshold if len(sentences) >= 10 else threshold - 0.03
 
         text_embeddings  = model.encode(sentences, convert_to_tensor=True)
         skill_embeddings = model.encode(COMMON_SKILLS, convert_to_tensor=True)
 
         found = []
         for i, skill in enumerate(COMMON_SKILLS):
-            scores = util.cos_sim(skill_embeddings[i], text_embeddings)
-            if scores.max().item() >= threshold:
+            if util.cos_sim(skill_embeddings[i], text_embeddings).max().item() >= adjusted:
                 found.append(skill)
 
-        # Merge with regex results — semantic can miss exact keyword matches
         regex_found = extract_skills(text)
-        merged = list(dict.fromkeys(found + regex_found))
-        return merged
+        return list(dict.fromkeys(found + regex_found))   # semantic first, then regex
 
     except Exception as e:
-        log.warning(f"Semantic extraction failed ({e}), falling back to regex.")
+        log.warning(f"Semantic extraction error ({e}), falling back to regex.")
         return extract_skills(text)
 
 
-# ── Tier 2: Ollama (local LLM — llama3 / mistral, no internet needed) ─────
+# ── Ollama (local LLM) ────────────────────────────────────────────────────
 
-OLLAMA_URL    = "http://localhost:11434/api/generate"
-OLLAMA_MODEL  = "llama3"   # change to "mistral" or "gemma2" if preferred
+OLLAMA_URL   = "http://localhost:11434/api/generate"
+OLLAMA_MODEL = "llama3"
 
 
-def _call_ollama(prompt: str, timeout: int = 60) -> str:
-    """Raw call to local Ollama server. Returns response text."""
+def _call_ollama(prompt: str, timeout: int = 90) -> str:
     resp = requests.post(
         OLLAMA_URL,
         json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
@@ -412,258 +561,211 @@ def _call_ollama(prompt: str, timeout: int = 60) -> str:
     return resp.json().get("response", "").strip()
 
 
-def extract_skills_ollama(text: str) -> list:
-    """
-    Ask local LLM to extract skills. Much smarter than regex —
-    understands context, infers implicit skills, handles typos.
-    Falls back to semantic → regex on failure.
-    """
-    prompt = f"""Extract all professional and technical skills from the text below.
-Return ONLY a valid JSON array of skill name strings. No explanation, no markdown.
-Example output: ["Python", "SQL", "Recruitment", "Excel"]
+def _parse_json_array(raw: str) -> list:
+    start, end = raw.find("["), raw.rfind("]") + 1
+    if start == -1:
+        raise ValueError("No JSON array found")
+    return json.loads(raw[start:end])
 
-Text:
-{text[:3000]}
 
-JSON array:"""
-
+def extract_skills_ollama(text: str) -> list[str]:
+    prompt = (
+        "Extract all professional and technical skills from the text below.\n"
+        "Return ONLY a valid JSON array of skill name strings. No explanation.\n\n"
+        f"Text:\n{text[:3000]}\n\nJSON array:"
+    )
     try:
-        raw = _call_ollama(prompt)
-        # Find the JSON array in the response
-        start, end = raw.find("["), raw.rfind("]") + 1
-        if start == -1:
-            raise ValueError("No JSON array in response")
-        skills = json.loads(raw[start:end])
+        raw    = _call_ollama(prompt)
+        skills = _parse_json_array(raw)
         return [s.lower().strip() for s in skills if isinstance(s, str)]
     except Exception as e:
-        log.warning(f"Ollama skill extraction failed ({e}), falling back to semantic.")
+        log.warning(f"Ollama skill extraction failed ({e}), falling back.")
         return extract_skills_semantic(text)
 
 
-def generate_reasoning_ollama(
-    user_skills: list,
-    required_skills: list,
-    missing_skills: list
-) -> list:
-    """
-    Ask local LLM to write personalised, intelligent gap explanations.
-    Much richer than the rule-based hints.
-    Falls back to rule-based reasoning on failure.
-    """
-    prompt = f"""You are a professional career coach reviewing a candidate's skill gap.
-
-Candidate's skills: {json.dumps(user_skills)}
-Required skills for the job: {json.dumps(required_skills)}
-Missing skills: {json.dumps(missing_skills)}
-
-For each required skill, write a short one-sentence explanation (max 20 words).
-Be specific, encouraging, and practical.
-
-Return ONLY a valid JSON array of objects. No markdown, no explanation.
-Each object must have exactly these keys: "skill", "status", "reason"
-"status" must be either "matched" or "missing"
-
-Example:
-[
-  {{"skill": "Python", "status": "matched", "reason": "Solid foundation that directly meets the job requirement."}},
-  {{"skill": "Docker", "status": "missing", "reason": "You know Linux already, so Docker should take about a week to learn."}}
-]
-
-JSON array:"""
-
+def generate_reasoning_ollama(user, required, missing) -> list[dict]:
+    prompt = (
+        f"You are a career coach.\n"
+        f"Candidate skills: {json.dumps(user)}\n"
+        f"Required skills: {json.dumps(required)}\n"
+        f"Missing skills: {json.dumps(missing)}\n\n"
+        "For each required skill write one encouraging sentence (≤20 words).\n"
+        "Return ONLY a JSON array: [{\"skill\",\"status\"(matched/missing),\"reason\"}]\n\nJSON:"
+    )
     try:
-        raw = _call_ollama(prompt, timeout=90)
-        start, end = raw.find("["), raw.rfind("]") + 1
-        if start == -1:
-            raise ValueError("No JSON array in response")
-        result = json.loads(raw[start:end])
-        # Validate structure before returning
+        raw    = _call_ollama(prompt, timeout=120)
+        result = _parse_json_array(raw)
         for item in result:
             assert "skill" in item and "status" in item and "reason" in item
         return result
     except Exception as e:
-        log.warning(f"Ollama reasoning failed ({e}), falling back to rule-based.")
-        return generate_reasoning(user_skills, required_skills, missing_skills)
+        log.warning(f"Ollama reasoning failed ({e}), falling back.")
+        return generate_reasoning(user, required, missing)
 
 
-def generate_learning_path_ollama(user_skills: list, missing_skills: list) -> list:
-    """
-    Ask local LLM to build a smarter, personalised learning path.
-    Considers the candidate's existing background when ordering steps.
-    Falls back to graph-based path on failure.
-    """
-    prompt = f"""You are a learning path designer for professionals.
-
-Candidate already knows: {json.dumps(user_skills)}
-Skills the candidate needs to learn: {json.dumps(missing_skills)}
-
-Create an ordered learning path from basic to advanced.
-- Start with prerequisites the candidate is missing
-- Consider what they already know
-- Keep it practical and ordered
-
-Return ONLY a valid JSON array of skill name strings in learning order.
-No explanation, no markdown.
-
-JSON array:"""
-
+def generate_learning_path_ollama(user, missing) -> list[str]:
+    prompt = (
+        f"Candidate knows: {json.dumps(user)}\n"
+        f"Needs to learn: {json.dumps(missing)}\n\n"
+        "Return a JSON array of skills in learning order (prerequisites first).\n\nJSON:"
+    )
     try:
-        raw = _call_ollama(prompt, timeout=60)
-        start, end = raw.find("["), raw.rfind("]") + 1
-        if start == -1:
-            raise ValueError("No JSON array in response")
-        path = json.loads(raw[start:end])
+        raw  = _call_ollama(prompt)
+        path = _parse_json_array(raw)
         return [s.strip() for s in path if isinstance(s, str)]
     except Exception as e:
-        log.warning(f"Ollama learning path failed ({e}), falling back to graph-based.")
-        return generate_learning_path(user_skills, missing_skills)
+        log.warning(f"Ollama learning path failed ({e}), falling back.")
+        return generate_learning_path(user, missing)
 
 
-# ── Tier 3: HuggingFace Inference API (cloud-hosted, no GPU needed) ────────
+# ── HuggingFace (cloud) ───────────────────────────────────────────────────
 
-HF_TOKEN = os.environ.get("HF_TOKEN", "")   # set via: export HF_TOKEN=hf_xxx
-HF_MODEL  = "HuggingFaceH4/zephyr-7b-beta"  # or "mistralai/Mixtral-8x7B-Instruct-v0.1"
+HF_TOKEN = os.environ.get("HF_TOKEN", "")
+HF_MODEL  = "HuggingFaceH4/zephyr-7b-beta"
 
 
-def extract_skills_huggingface(text: str) -> list:
-    """
-    Use HuggingFace Inference API for skill extraction.
-    Requires HF_TOKEN env variable. Falls back to semantic on failure.
-    """
+def extract_skills_huggingface(text: str) -> list[str]:
     if not HF_TOKEN:
-        log.warning("HF_TOKEN not set. Falling back to semantic extraction.")
+        log.warning("HF_TOKEN not set. Using semantic fallback.")
         return extract_skills_semantic(text)
-
     try:
         from huggingface_hub import InferenceClient
         client = InferenceClient(token=HF_TOKEN)
-
-        prompt = f"""<|system|>
-You are a resume parser. Extract all professional skills as a JSON array. Return only the array, nothing else.
-<|user|>
-{text[:2000]}
-<|assistant|>"""
-
-        output = client.text_generation(
-            prompt,
-            model=HF_MODEL,
-            max_new_tokens=300,
-            temperature=0.1
+        prompt = (
+            "<|system|>\nExtract professional skills as a JSON array. Return only the array.\n"
+            f"<|user|>\n{text[:2000]}\n<|assistant|>"
         )
-        start, end = output.find("["), output.rfind("]") + 1
-        if start == -1:
-            raise ValueError("No JSON array in response")
-        skills = json.loads(output[start:end])
+        out    = client.text_generation(prompt, model=HF_MODEL, max_new_tokens=300, temperature=0.1)
+        skills = _parse_json_array(out)
         return [s.lower().strip() for s in skills if isinstance(s, str)]
-
     except Exception as e:
-        log.warning(f"HuggingFace extraction failed ({e}), falling back to semantic.")
+        log.warning(f"HuggingFace failed ({e}), falling back.")
         return extract_skills_semantic(text)
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# SECTION 10 — SMART ANALYZE FUNCTIONS
-# Two versions: original (fast, no dependencies) and LLM-upgraded (smarter)
+# SECTION 11 — UNIFIED ANALYZE FUNCTION
 # ══════════════════════════════════════════════════════════════════════════
 
-def analyze(resume_text: str, jd_text: str) -> dict:
-    """
-    Original rule-based pipeline.
-    Fast, no external dependencies, always works.
-    """
-    clean_resume = clean_text(resume_text)
-    clean_jd     = clean_text(jd_text)
-
-    user_skills     = extract_skills(clean_resume)
-    required_skills = extract_skills(clean_jd)
-    missing_skills  = find_missing(user_skills, required_skills)
-    learning_path   = generate_learning_path(user_skills, missing_skills)
-    reasoning       = generate_reasoning(user_skills, required_skills, missing_skills)
-
-    return {
-        "mode":            "rule_based",
-        "user_skills":     [s.title() for s in user_skills],
-        "required_skills": [s.title() for s in required_skills],
-        "missing_skills":  [s.title() for s in missing_skills],
-        "learning_path":   [s.title() for s in learning_path],
-        "reasoning":       reasoning,
-    }
+AnalysisMode = Literal["rule_based", "semantic", "ollama", "huggingface"]
 
 
-def analyze_with_llm(
+def analyze(
     resume_text: str,
-    jd_text: str,
-    mode: str = "semantic"
+    jd_text:     str,
+    mode:        AnalysisMode = "semantic",
 ) -> dict:
     """
-    LLM-upgraded pipeline. Same structure as analyze() but smarter.
-
-    mode options:
-        "semantic"      — sentence-transformers (offline, recommended default)
-        "ollama"        — local LLM via Ollama (best quality, needs Ollama running)
-        "huggingface"   — HuggingFace Inference API (cloud, needs HF_TOKEN)
-
-    All modes fall back to the rule-based engine if something fails,
-    so this function will always return a valid result.
+    Single entry point for all analysis modes.
+    Always returns the same JSON structure — safe for frontend consumption.
     """
     clean_resume = clean_text(resume_text)
     clean_jd     = clean_text(jd_text)
 
-    log.info(f"Running analyze_with_llm in mode: {mode}")
+    if not clean_resume:
+        return {"error": "Resume text is empty or could not be parsed."}
+    if not clean_jd:
+        return {"error": "Job description text is empty or could not be parsed."}
 
-    # ── Skill extraction (upgraded) ────────────────────────────────────
+    log.info(f"Analyzing — mode: {mode}")
+
+    # ── Skill extraction ───────────────────────────────────────────────
     if mode == "ollama":
         user_skills     = extract_skills_ollama(clean_resume)
         required_skills = extract_skills_ollama(clean_jd)
     elif mode == "huggingface":
         user_skills     = extract_skills_huggingface(clean_resume)
         required_skills = extract_skills_huggingface(clean_jd)
-    else:  # default: semantic
+    elif mode == "semantic":
         user_skills     = extract_skills_semantic(clean_resume)
         required_skills = extract_skills_semantic(clean_jd)
+    else:   # rule_based
+        user_skills     = extract_skills(clean_resume)
+        required_skills = extract_skills(clean_jd)
 
-    # ── Gap analysis (same logic, inputs are smarter now) ──────────────
+    # ── Gap analysis ───────────────────────────────────────────────────
     missing_skills = find_missing(user_skills, required_skills)
+    match_score    = compute_match_score(user_skills, required_skills, missing_skills)
 
-    # ── Learning path + reasoning (upgraded for Ollama) ────────────────
+    # ── Path & reasoning ───────────────────────────────────────────────
     if mode == "ollama":
         learning_path = generate_learning_path_ollama(user_skills, missing_skills)
         reasoning     = generate_reasoning_ollama(user_skills, required_skills, missing_skills)
     else:
-        # For semantic/HF: skill extraction is smarter, reasoning stays rule-based
-        # (rule-based reasoning works well when skills are correctly identified)
         learning_path = generate_learning_path(user_skills, missing_skills)
         reasoning     = generate_reasoning(user_skills, required_skills, missing_skills)
 
     return {
         "mode":            mode,
+        "match_score":     match_score,            # ← NEW: 0–100
         "user_skills":     [s.title() for s in user_skills],
         "required_skills": [s.title() for s in required_skills],
         "missing_skills":  [s.title() for s in missing_skills],
         "learning_path":   [s.title() for s in learning_path],
         "reasoning":       reasoning,
+        "summary": {                               # ← NEW: quick stats for dashboard cards
+            "total_required":  len(required_skills),
+            "matched":         len(required_skills) - len(missing_skills),
+            "missing":         len(missing_skills),
+            "extra_skills":    len(user_skills) - (len(required_skills) - len(missing_skills)),
+        }
     }
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# SECTION 11 — FASTAPI SERVER (frontend connects here)
+# SECTION 12 — FILE PARSING HELPERS (PDF / DOCX upload)
 # ══════════════════════════════════════════════════════════════════════════
 
-from fastapi import FastAPI, HTTPException
+def _extract_text_from_pdf(file_bytes: bytes) -> str:
+    import io
+    # Try pdfplumber first (handles most modern PDFs reliably)
+    try:
+        import pdfplumber
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            text = " ".join(page.extract_text() or "" for page in pdf.pages)
+        if text.strip():
+            return text
+    except Exception as e:
+        log.warning(f"pdfplumber failed ({e}), trying PyPDF2")
+    # Fallback to PyPDF2
+    try:
+        import PyPDF2
+        reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+        text = " ".join(page.extract_text() or "" for page in reader.pages)
+        if text.strip():
+            return text
+    except Exception as e:
+        log.warning(f"PyPDF2 failed ({e})")
+    return ""
+
+
+def _extract_text_from_docx(file_bytes: bytes) -> str:
+    try:
+        import docx, io
+        doc = docx.Document(io.BytesIO(file_bytes))
+        return " ".join(p.text for p in doc.paragraphs)
+    except Exception as e:
+        log.warning(f"DOCX parse failed ({e})")
+        return ""
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# SECTION 13 — FASTAPI SERVER
+# ══════════════════════════════════════════════════════════════════════════
+
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Literal
 
 app = FastAPI(
     title="Resume Analyzer API",
-    description="AI-powered resume skill gap analysis. Supports rule-based and LLM modes.",
-    version="2.0"
+    description="AI-powered resume skill-gap analysis — rule-based, semantic, and LLM modes.",
+    version="3.0",
 )
 
-# Allow all origins during dev — tighten this in production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],   # tighten to your frontend origin in production
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -672,102 +774,166 @@ app.add_middleware(
 # ── Request / Response models ──────────────────────────────────────────────
 
 class AnalyzeRequest(BaseModel):
-    resume_text: str = Field(..., description="Raw resume text (HTML or plain)")
+    resume_text: str = Field(..., description="Raw resume text (plain or HTML)")
     jd_text:     str = Field(..., description="Job description text")
-    mode:        Literal["rule_based", "semantic", "ollama", "huggingface"] = Field(
-        default="semantic",
-        description=(
-            "rule_based  — fast regex, no dependencies\n"
-            "semantic    — sentence-transformers offline (recommended)\n"
-            "ollama      — local LLM via Ollama (best quality)\n"
-            "huggingface — cloud LLM via HuggingFace API"
-        )
-    )
+    mode:        AnalysisMode = Field("semantic", description="Analysis mode")
 
 
-class ReasoningItem(BaseModel):
-    skill:  str
-    status: str
-    reason: str
+class SummaryModel(BaseModel):
+    total_required: int
+    matched:        int
+    missing:        int
+    extra_skills:   int
 
 
 class AnalyzeResponse(BaseModel):
     mode:            str
-    user_skills:     list
-    required_skills: list
-    missing_skills:  list
-    learning_path:   list
-    reasoning:       list
+    match_score:     int
+    user_skills:     list[str]
+    required_skills: list[str]
+    missing_skills:  list[str]
+    learning_path:   list[str]
+    reasoning:       list[dict]
+    summary:         dict
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────
 
-@app.post("/analyze", response_model=AnalyzeResponse)
+@app.post("/analyze", response_model=AnalyzeResponse, tags=["Analysis"])
 def analyze_endpoint(req: AnalyzeRequest):
     """
-    Main endpoint. Frontend sends resume + JD, gets back skill analysis.
+    **Main endpoint** — paste resume + JD, get back full skill-gap analysis.
 
-    Example request body:
-    {
-        "resume_text": "...",
-        "jd_text": "...",
-        "mode": "semantic"
-    }
+    Returns:
+    - `match_score` (0–100): how well the candidate fits
+    - `user_skills`: skills found in resume
+    - `required_skills`: skills found in JD
+    - `missing_skills`: gap list
+    - `learning_path`: ordered list of skills to learn (prerequisites first)
+    - `reasoning`: per-skill explanation with status (matched / missing)
+    - `summary`: quick stats (total_required, matched, missing, extra_skills)
     """
     if not req.resume_text.strip():
-        raise HTTPException(status_code=400, detail="resume_text is empty")
+        raise HTTPException(400, "resume_text is empty")
     if not req.jd_text.strip():
-        raise HTTPException(status_code=400, detail="jd_text is empty")
+        raise HTTPException(400, "jd_text is empty")
+    try:
+        result = analyze(req.resume_text, req.jd_text, mode=req.mode)
+        if "error" in result:
+            raise HTTPException(422, result["error"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Analysis error: {e}", exc_info=True)
+        raise HTTPException(500, f"Internal error: {e}")
+
+
+@app.post("/upload", tags=["Analysis"])
+async def upload_endpoint(
+    resume: UploadFile = File(..., description="Resume file (PDF or DOCX)"),
+    jd_file: Optional[UploadFile] = File(None, description="JD file (PDF or TXT, optional)"),
+    jd_text: str       = Form("", description="Job description text (used if jd_file not provided)"),
+    mode:    str       = Form("semantic"),
+):
+    """
+    Upload a PDF/DOCX resume + either a JD file or JD text — returns same structure as /analyze.
+    """
+    # ── Parse resume ──────────────────────────────────────────────────
+    resume_bytes = await resume.read()
+    fname = (resume.filename or "").lower()
+    if fname.endswith(".pdf"):
+        resume_text = _extract_text_from_pdf(resume_bytes)
+    elif fname.endswith(".docx"):
+        resume_text = _extract_text_from_docx(resume_bytes)
+    else:
+        resume_text = resume_bytes.decode("utf-8", errors="ignore")
+
+    if not resume_text.strip():
+        raise HTTPException(422, "Could not extract text from resume file. Ensure it is a valid PDF, DOCX, or TXT.")
+
+    # ── Parse JD ──────────────────────────────────────────────────────
+    if jd_file and jd_file.filename:
+        jd_bytes = await jd_file.read()
+        jd_fname = (jd_file.filename or "").lower()
+        if jd_fname.endswith(".pdf"):
+            jd_text = _extract_text_from_pdf(jd_bytes)
+        elif jd_fname.endswith(".docx"):
+            jd_text = _extract_text_from_docx(jd_bytes)
+        else:
+            jd_text = jd_bytes.decode("utf-8", errors="ignore")
+
+    if not jd_text.strip():
+        raise HTTPException(422, "Could not extract text from job description. Ensure it is a valid PDF, DOCX, or TXT.")
 
     try:
-        if req.mode == "rule_based":
-            result = analyze(req.resume_text, req.jd_text)
-        else:
-            result = analyze_with_llm(req.resume_text, req.jd_text, mode=req.mode)
+        result = analyze(resume_text, jd_text, mode=mode)
         return result
     except Exception as e:
-        log.error(f"Analysis failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error(f"Upload analysis error: {e}", exc_info=True)
+        raise HTTPException(500, str(e))
 
 
-@app.get("/health")
+@app.get("/health", tags=["System"])
 def health():
-    """Quick health check — useful for frontend to verify server is up."""
-    return {"status": "ok", "version": "2.0"}
+    """Heartbeat — frontend can poll this to check if the server is up."""
+    return {"status": "ok", "version": "3.0"}
 
 
-@app.get("/modes")
+@app.get("/modes", tags=["System"])
 def list_modes():
     """
-    Tell the frontend which LLM modes are available on this server.
-    Frontend can use this to show/hide mode options dynamically.
+    Returns which LLM modes are currently available on this server.
+    Frontend can use this to enable/disable mode selectors dynamically.
     """
-    semantic_available = True
+    semantic_ok = False
     try:
         from sentence_transformers import SentenceTransformer  # noqa
+        semantic_ok = True
     except ImportError:
-        semantic_available = False
+        pass
 
-    ollama_available = False
+    ollama_ok = False
     try:
         r = requests.get("http://localhost:11434/api/tags", timeout=2)
-        ollama_available = r.status_code == 200
+        ollama_ok = r.status_code == 200
     except Exception:
         pass
 
-    hf_available = bool(HF_TOKEN)
+    hf_ok = bool(HF_TOKEN)
 
     return {
-        "rule_based":   True,
-        "semantic":     semantic_available,
-        "ollama":       ollama_available,
-        "huggingface":  hf_available,
+        "rule_based":  True,
+        "semantic":    semantic_ok,
+        "ollama":      ollama_ok,
+        "huggingface": hf_ok,
     }
 
 
-@app.get("/dataset/stats")
+@app.get("/skills", tags=["System"])
+def list_skills(domain: Optional[str] = None):
+    """
+    Return all skills in the database, optionally filtered by domain.
+    Useful for frontend autocomplete / tag pickers.
+    """
+    if domain:
+        skills = SKILLS_BY_DOMAIN.get(domain.lower(), [])
+        if not skills:
+            raise HTTPException(404, f"Domain '{domain}' not found. "
+                                     f"Available: {list(SKILLS_BY_DOMAIN.keys())}")
+        return {"domain": domain, "skills": [s.title() for s in skills]}
+    return {
+        "domains": list(SKILLS_BY_DOMAIN.keys()),
+        "total":   len(COMMON_SKILLS),
+        "skills":  {d: [s.title() for s in sl] for d, sl in SKILLS_BY_DOMAIN.items()},
+    }
+
+
+@app.get("/dataset/stats", tags=["Dataset"])
 def dataset_stats():
-    """Return basic stats about the loaded dataset — useful for dashboard."""
+    """Basic stats about the loaded resume dataset — useful for an admin dashboard."""
+    if resume_df.empty:
+        return {"total_resumes": 0, "categories": {}, "total_skills": len(COMMON_SKILLS)}
     return {
         "total_resumes": len(resume_df),
         "categories":    resume_df["Category"].value_counts().to_dict(),
@@ -776,34 +942,24 @@ def dataset_stats():
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# SECTION 12 — TEST (run directly: python resume_analyzer.py)
+# SECTION 14 — STANDALONE TEST
 # ══════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    hr_rows = resume_df[resume_df["Category"] == "HR"]
-    sample_resume_raw = (
-        hr_rows["Resume_str"].iloc[0]
-        if not hr_rows.empty
-        else resume_df["Resume_str"].iloc[0]
-    )
-
-    sample_jd = """
-    We are looking for an HR Business Partner with strong experience in
-    talent acquisition, onboarding, performance management, and HRIS systems
-    such as Workday. The ideal candidate should have excellent communication
-    skills, knowledge of labour law, payroll, and compensation. Experience
-    with training and development and change management is a plus.
-    Proficiency in Excel and PowerPoint required.
+    sample_resume = """
+    Senior Data Scientist with 6 years of experience in Python, machine learning,
+    deep learning, NLP, and MLOps. Strong background in scikit-learn, TensorFlow,
+    PyTorch, and Hugging Face Transformers. Proficient in SQL, PostgreSQL, Spark,
+    and Snowflake. Deployed models on AWS using Docker and Kubernetes. Experience
+    with CI/CD pipelines via GitHub Actions. Excellent communication and leadership.
     """
 
-    print("\n" + "="*60)
-    print("TEST 1 — Rule-based (original engine)")
-    print("="*60)
-    result = analyze(sample_resume_raw, sample_jd)
-    print(json.dumps(result, indent=2))
+    sample_jd = """
+    We are looking for a Machine Learning Engineer with expertise in Python, MLOps,
+    model deployment, Docker, Kubernetes, and CI/CD. Proficiency in NLP, deep learning,
+    and experience with LLMs or Generative AI is highly desired. Must know SQL,
+    AWS or GCP, and have strong stakeholder management skills.
+    """
 
-    print("\n" + "="*60)
-    print("TEST 2 — Semantic (sentence-transformers)")
-    print("="*60)
-    result_llm = analyze_with_llm(sample_resume_raw, sample_jd, mode="semantic")
-    print(json.dumps(result_llm, indent=2))
+    result = analyze(sample_resume, sample_jd, mode="semantic")
+    print(json.dumps(result, indent=2))

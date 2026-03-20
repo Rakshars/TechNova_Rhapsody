@@ -35,7 +35,7 @@ export default function ResultsSection({ data }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16 }}>
         <MetricCard value={data.skills_matched.length} label="Skills Matched" color="var(--accent)" />
         <MetricCard value={data.skills_missing.length} label="Gaps Found" color="var(--accent3)" />
-        <MetricCard value={data.learning_path.length} label="Learning Steps" color="var(--accent2)" />
+        <MetricCard value={`${data.match_score ?? 0}%`} label="Match Score" color="var(--accent2)" />
       </div>
 
       <motion.div className="divider" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={slideUp} />
