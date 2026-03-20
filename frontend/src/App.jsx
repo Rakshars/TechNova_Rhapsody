@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
+import { motion, useMotionValue, useSpring } from 'framer-motion'
+import Lenis from 'lenis'
 import Navbar from './components/Navbar'
 import Hero from './components/Hero'
 import UploadSection from './components/UploadSection'
@@ -19,6 +21,29 @@ export default function App() {
   const [error, setError] = useState('')
   const resultsRef = useRef(null)
 
+  // Framer Motion Cursor State
+  const cursorX = useMotionValue(-100)
+  const cursorY = useMotionValue(-100)
+  const springConfig = { damping: 25, stiffness: 200, mass: 0.5 }
+  const cursorXSpring = useSpring(cursorX, springConfig)
+  const cursorYSpring = useSpring(cursorY, springConfig)
+  const [isHovering, setIsHovering] = useState(false)
+
+  // Smooth Scroll Initialization
+  useEffect(() => {
+    const lenis = new Lenis({
+      duration: 1.2,
+      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      smoothWheel: true,
+    })
+    function raf(time) {
+      lenis.raf(time)
+      requestAnimationFrame(raf)
+    }
+    requestAnimationFrame(raf)
+    return () => lenis.destroy()
+  }, [])
+
   // Scroll progress bar
   useEffect(() => {
     const bar = document.getElementById('scroll-bar')
@@ -30,37 +55,20 @@ export default function App() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
-  // Custom cursor
+  // Framer Motion Cursor Tracker
   useEffect(() => {
-    const dot = document.getElementById('cursor-dot')
-    const ring = document.getElementById('cursor-ring')
-    if (!dot || !ring) return
-    let mx = 0, my = 0, rx = 0, ry = 0
-    const onMove = (e) => { mx = e.clientX; my = e.clientY }
+    const onMove = (e) => {
+      cursorX.set(e.clientX)
+      cursorY.set(e.clientY)
+    }
     window.addEventListener('mousemove', onMove)
-    let raf
-    const animate = () => {
-      dot.style.left = mx + 'px'
-      dot.style.top = my + 'px'
-      rx += (mx - rx) * 0.12
-      ry += (my - ry) * 0.12
-      ring.style.left = rx + 'px'
-      ring.style.top = ry + 'px'
-      raf = requestAnimationFrame(animate)
-    }
-    animate()
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      cancelAnimationFrame(raf)
-    }
-  }, [])
+    return () => window.removeEventListener('mousemove', onMove)
+  }, [cursorX, cursorY])
 
-  // Cursor hover effect — re-runs when phase changes so new elements get picked up
+  // Framer Motion Cursor Hover state across the app
   useEffect(() => {
-    const ring = document.getElementById('cursor-ring')
-    if (!ring) return
-    const add = () => ring.classList.add('hovering')
-    const remove = () => ring.classList.remove('hovering')
+    const add = () => setIsHovering(true)
+    const remove = () => setIsHovering(false)
     const els = document.querySelectorAll('button, a, .upload-zone, .path-step, .metric-card')
     els.forEach(el => { el.addEventListener('mouseenter', add); el.addEventListener('mouseleave', remove) })
     return () => els.forEach(el => { el.removeEventListener('mouseenter', add); el.removeEventListener('mouseleave', remove) })
@@ -124,8 +132,14 @@ export default function App() {
     <>
       <div className="noise" />
       <div id="scroll-bar" />
-      <div id="cursor-dot" />
-      <div id="cursor-ring" />
+      <motion.div
+        className="cursor-dot"
+        style={{ left: cursorX, top: cursorY }}
+      />
+      <motion.div
+        className={`cursor-ring ${isHovering ? 'hovering' : ''}`}
+        style={{ left: cursorXSpring, top: cursorYSpring }}
+      />
 
       <Navbar />
       <Hero />

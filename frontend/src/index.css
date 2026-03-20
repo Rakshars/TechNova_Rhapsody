@@ -43,7 +43,7 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
 }
 
-#cursor-dot {
+.cursor-dot {
   position: fixed;
   width: 8px; height: 8px;
   background: var(--accent);
@@ -53,7 +53,7 @@ body {
   transform: translate(-50%, -50%);
 }
 
-#cursor-ring {
+.cursor-ring {
   position: fixed;
   width: 36px; height: 36px;
   border: 1.5px solid rgba(74,240,196,0.5);
@@ -64,7 +64,7 @@ body {
   transition: width 0.3s, height 0.3s, border-color 0.3s, background 0.3s;
 }
 
-#cursor-ring.hovering {
+.cursor-ring.hovering {
   width: 56px; height: 56px;
   border-color: var(--accent);
   background: rgba(74,240,196,0.07);
