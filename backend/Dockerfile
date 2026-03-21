@@ -8,6 +8,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Pre-download Kaggle dataset and ML model during build to make container start instantly
+RUN python -c "import kagglehub; kagglehub.dataset_download('snehaanbhawal/resume-dataset')"
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+
 EXPOSE 8000
 
 CMD ["uvicorn", "resume_analyzer:app", "--host", "0.0.0.0", "--port", "8000"]
