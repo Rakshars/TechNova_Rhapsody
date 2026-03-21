@@ -6,6 +6,7 @@ import PathStep from './PathStep'
 import ReasoningBox from './ReasoningBox'
 import AvatarScanner from './AvatarScanner'
 import TerminalText from './TerminalText'
+import CustomPathway from './CustomPathway'
 
 export default function ResultsSection({ data }) {
   const pathRef = useRef(null)
@@ -83,6 +84,10 @@ export default function ResultsSection({ data }) {
             {data.learning_path.map(step => <PathStep key={step.step} step={step} />)}
           </div>
         </div>
+      </motion.div>
+
+      <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={slideUp}>
+        <CustomPathway skills={data.learning_path.map(step => step.title)} />
       </motion.div>
 
       <motion.div className="divider" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={slideUp} />

@@ -7,6 +7,7 @@ import UploadSection from './components/UploadSection'
 import LoadingState from './components/LoadingState'
 import ResultsSection from './components/ResultsSection'
 import BackgroundStars from './components/BackgroundStars'
+import Chatbot from './components/Chatbot'
 
 const LOADING_MESSAGES = [
   'Parsing resume...', 'Extracting skills...', 'Scanning job description...',
@@ -202,6 +203,8 @@ export default function App() {
           {error}
         </div>
       )}
+
+      <Chatbot />
     </>
   )
 }

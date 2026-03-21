@@ -1097,6 +1097,11 @@ class AnalyzeRequest(BaseModel):
     jd_text:     str = Field(..., description="Job description text")
     mode:        AnalysisMode = Field("semantic", description="Analysis mode")
 
+class CustomPathwayRequest(BaseModel):
+    skills: list[str] = Field(..., description="List of missing skills for the schedule")
+    start_date: str   = Field(..., description="Start date (YYYY-MM-DD)")
+    end_date: str     = Field(..., description="End date (YYYY-MM-DD)")
+
 
 class SummaryModel(BaseModel):
     total_required: int
@@ -1193,6 +1198,51 @@ async def upload_endpoint(
         log.error(f"Upload analysis error: {e}", exc_info=True)
         raise HTTPException(500, str(e))
 
+@app.post("/custom_pathway", tags=["Analysis"])
+def custom_pathway_endpoint(req: CustomPathwayRequest):
+    from datetime import datetime, timedelta
+    
+    try:
+        start = datetime.strptime(req.start_date, "%Y-%m-%d")
+        end   = datetime.strptime(req.end_date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD.")
+        
+    days_total = (end - start).days + 1
+    if days_total <= 0:
+        raise HTTPException(400, "End date must be after start date.")
+        
+    if not req.skills:
+        return {"schedule": []}
+        
+    days_per_skill = max(1, days_total // len(req.skills))
+    
+    schedule = []
+    current_date = start
+    for i, skill in enumerate(req.skills):
+        skill_days = days_per_skill
+        if i == len(req.skills) - 1:
+            skill_days = days_total - (i * days_per_skill)
+            
+        for d in range(skill_days):
+            if d == 0:
+                topic = f"Introduction to {skill}: Terminology and Setup"
+            elif d == skill_days - 1:
+                topic = f"Practical Application: Mini-Project using {skill}"
+            elif d == 1:
+                topic = f"Core Fundamentals and Architecture of {skill}"
+            else:
+                topic = f"Advanced Concepts and Best Practices for {skill}"
+                
+            schedule.append({
+                "date": current_date.strftime("%Y-%m-%d"),
+                "day_name": current_date.strftime("%A"),
+                "skill": skill,
+                "topic": topic
+            })
+            current_date += timedelta(days=1)
+            
+    return {"schedule": schedule}
 
 @app.get("/health", tags=["System"])
 def health():
