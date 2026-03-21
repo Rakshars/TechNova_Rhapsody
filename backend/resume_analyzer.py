@@ -1253,11 +1253,11 @@ def custom_pathway_endpoint(req: CustomPathwayRequest):
 
 FAQ = {
     "hello hi hey greetings": "Hi there! I am TechNova AI, your career assistant. How can I help you?",
-    "how do i use this app resume upload": "You can upload your resume on the left side of the dashboard. Once uploaded, I'll extract your skills and compare them to the job description!",
-    "job description target role": "Paste your target job description on the right side and I will generate a map of what you need to learn to get hired.",
     "what is a skill gap missing skills": "A skill gap means you lack a skill required by the job. Don't worry, I generate a learning path for each gap so you know what to learn!",
+    "how do i use this app resume upload": "You can upload your resume on the left side of the dashboard. Once uploaded, I'll extract your skills and compare them to the job description!",
+    "what is a custom pathway custom schedule dates": "Select a start and end date at the bottom to get a customized, day-by-day learning schedule tailored exactly for your missing skills.",
+    "job description target role": "Paste your target job description on the right side and I will generate a map of what you need to learn to get hired.",
     "learning pathway roadmap plan": "The learning pathway gives you a step-by-step roadmap to learn the missing skills. You can also generate a custom schedule by picking dates below!",
-    "custom pathway custom schedule dates": "Select a start and end date at the bottom to get a customized, day-by-day learning schedule tailored exactly for your missing skills.",
     "how does this work behind the scenes": "I analyze your resume and the job desc using AI (Natural Language Processing) to extract skills. Then I find the gaps and build a learning plan for you.",
     "who made you creators team": "I am TechNova AI, built by an awesome team for this hackathon!",
     "thanks thank you cool awesome": "You're very welcome! Let me know if you need anything else.",
@@ -1266,61 +1266,44 @@ FAQ = {
 
 @app.post("/chat", tags=["Analysis"])
 def chat_endpoint(req: ChatRequest):
-    """Chatbot endpoint acting as a helpful career assistant."""
+    """Chatbot endpoint - tries Ollama -> HuggingFace -> semantic FAQ fallback."""
     if not req.messages:
-        return {"reply": "Hello!"}
+        return {"reply": "Hello! How can I help you?"}
 
-    # 1. Try Ollama (Local LLM)
+    SYSTEM = (
+        "You are TechNova AI, an expert career counselor and skill-gap advisor. "
+        "Keep answers concise (2-4 sentences), friendly, and practical. "
+        "Focus on career advice, skill learning, resume tips, and job descriptions."
+    )
+
+    def to_llm_role(r: str) -> str:
+        return "assistant" if r in ("ai", "assistant") else "user"
+
+    history = req.messages[-6:]
+
+    # 1. Try Ollama (local LLM)
     try:
-        ollama_msgs = [{"role": ("assistant" if m.role == "ai" else "user"), "content": m.text} for m in req.messages[-6:]]
-        ollama_msgs.insert(0, {"role": "system", "content": "You are TechNova AI, an expert career counselor. Keep answers concise, direct, friendly, and practical."})
-        
-        r = requests.post("http://localhost:11434/api/chat", json={"model": OLLAMA_MODEL, "messages": ollama_msgs, "stream": False}, timeout=15)
+        ollama_msgs = [{"role": "system", "content": SYSTEM}]
+        ollama_msgs += [{"role": to_llm_role(m.role), "content": m.text} for m in history]
+        r = requests.post(
+            "http://localhost:11434/api/chat",
+            json={"model": OLLAMA_MODEL, "messages": ollama_msgs, "stream": False},
+            timeout=20
+        )
         if r.status_code == 200:
-            return {"reply": r.json()["message"]["content"]}
+            reply = r.json().get("message", {}).get("content", "").strip()
+            if reply:
+                return {"reply": reply}
     except Exception as e:
         log.warning(f"Ollama chat failed: {e}")
 
-    # 2. Try Hugging Face fallback
-    if HF_TOKEN:
-        try:
-            from huggingface_hub import InferenceClient
-            client = InferenceClient(token=HF_TOKEN)
-            prompt = "<|system|>\nYou are TechNova AI, a helpful career assistant. Keep answers concise.\n"
-            for m in req.messages[-4:]:
-                if m.role == 'user':
-                    prompt += f"<|user|>\n{m.text}\n"
-                else:
-                    prompt += f"<|assistant|>\n{m.text}\n"
-            prompt += "<|assistant|>\n"
-            
-            out = client.text_generation(prompt, model=HF_MODEL, max_new_tokens=250, temperature=0.7)
-            return {"reply": out.strip()}
-        except Exception as e:
-            log.warning(f"HF chat failed: {e}")
+    # 2. Keyword FAQ fallback (no model needed)
+    user_text = req.messages[-1].text.lower()
+    for key, answer in FAQ.items():
+        if any(word in user_text for word in key.split()):
+            return {"reply": answer}
 
-    # 3. Last Resort Fallback - Local Semantic AI Chat
-    try:
-        user_text = req.messages[-1].text
-        model = _load_semantic_model()
-        if model is not None:
-            from sentence_transformers import util
-            faq_keys = list(FAQ.keys())
-            key_embeddings = model.encode(faq_keys, convert_to_tensor=True)
-            user_embedding = model.encode(user_text, convert_to_tensor=True)
-            
-            sims = util.cos_sim(user_embedding, key_embeddings)[0]
-            best_idx = sims.argmax().item()
-            best_score = sims[best_idx].item()
-            
-            if best_score > 0.4:
-                return {"reply": list(FAQ.values())[best_idx]}
-            else:
-                return {"reply": "I am currently set to local demo mode! While I don't have an active internet LLM backend right now, I am fully equipped to guide you through how this application works, what skill gaps are, and how to use learning pathways. What would you like to know?"}
-    except Exception as e:
-        log.warning(f"Semantic chat failed: {e}")
-
-    return {"reply": "I am currently running in offline demo mode and cannot reach my LLM backend. Please try asking me again when I'm fully wired up!"}
+    return {"reply": "I can only help with skill gaps, learning paths, and resume tips here. For a full analysis, head to the main page — upload your resume and a job description to get started!"}
 
 @app.get("/health", tags=["System"])
 def health():

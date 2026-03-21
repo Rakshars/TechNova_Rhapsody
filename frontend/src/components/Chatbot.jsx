@@ -15,43 +15,48 @@ export default function Chatbot() {
     }
   }, [messages, isOpen])
 
-  const sendMessage = async (text) => {
-    if (!text.trim()) return
+  const [isTyping, setIsTyping] = useState(false)
 
+  const HARDCODED = {
+    "What is a skill gap?": "A skill gap means you lack a skill required by the job. Don't worry — upload your resume and a job description on the main page, and I'll generate a learning path for each gap!",
+    "How do I use this app?": "Upload your resume on the left and paste a job description on the right of the main page. Hit Analyze and I'll extract your skills, find the gaps, and build a personalized learning roadmap for you!",
+    "What's a custom pathway?": "After analysis, scroll down on the main page to pick a start and end date. I'll generate a day-by-day custom learning schedule tailored exactly to your missing skills!"
+  }
+
+  const sendMessage = async (text) => {
+    if (!text.trim() || isTyping) return
     const userMsg = { role: 'user', text }
-    // Use a functional update for setMessages to ensure we're working with the latest state
-    setMessages(prevMessages => {
-      const newMessages = [...prevMessages, userMsg];
-      
-      // Immediately send the message to the API
-      fetch('/api/chat', {
+    setMessages(prev => [...prev, userMsg])
+
+    // Hardcoded instant answers for chip questions
+    if (HARDCODED[text]) {
+      setMessages(prev => [...prev, { role: 'ai', text: HARDCODED[text] }])
+      return
+    }
+
+    setIsTyping(true)
+    const updated = [...messages, userMsg]
+    try {
+      const resp = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newMessages }) // Send the updated list of messages
+        body: JSON.stringify({ messages: updated })
       })
-      .then(resp => {
-        if (!resp.ok) {
-          throw new Error(`Server error ${resp.status}`);
-        }
-        return resp.json();
-      })
-      .then(data => {
-        setMessages(prev => [...prev, { role: 'ai', text: data.reply }]);
-      })
-      .catch(err => {
-        console.error("Error sending message:", err);
-        setMessages(prev => [...prev, { role: 'ai', text: "Error connecting to the backend right now." }]);
-      });
+      const data = await resp.json()
+      setMessages(prev => [...prev, { role: 'ai', text: data.reply ?? 'Sorry, no response.' }])
+    } catch {
+      setMessages(prev => [...prev, { role: 'ai', text: 'Error connecting to the backend.' }])
+    } finally {
+      setIsTyping(false)
+    }
+  }
 
-      return newMessages; // Return the new state for the user message
-    });
-  };
-
-  const handleSend = async (e) => {
+  const handleSend = (e) => {
     e.preventDefault()
     if (!input.trim()) return
-    sendMessage(input)
+    const text = input
     setInput('')
+    sendMessage(text)
   }
 
   return (
@@ -88,7 +93,10 @@ export default function Chatbot() {
             </div>
 
             {/* Chat Messages */}
-            <div className="chatbot-scroll" style={{ flex: 1, padding: 16, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div
+              style={{ flex: 1, padding: 16, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16, minHeight: 0 }}
+              onWheel={e => e.stopPropagation()}
+            >
               {messages.map((msg, idx) => (
                 <div key={idx} style={{
                   alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
@@ -103,13 +111,29 @@ export default function Chatbot() {
                   {msg.text}
                 </div>
               ))}
+              {isTyping && (
+                <div style={{
+                  alignSelf: 'flex-start', background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.05)',
+                  padding: '12px 16px', borderRadius: 16, borderBottomLeftRadius: 4,
+                  display: 'flex', gap: 5, alignItems: 'center'
+                }}>
+                  {[0,1,2].map(i => (
+                    <motion.div key={i}
+                      animate={{ y: [0, -5, 0] }}
+                      transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15 }}
+                      style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)', opacity: 0.7 }}
+                    />
+                  ))}
+                </div>
+              )}
               <div ref={messagesEndRef} />
             </div>
 
             {/* Predefined Chips */}
-            {messages.length <= 2 && (
-              <div className="chatbot-scroll" style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, padding: '0 16px 12px'
+            {!isTyping && (
+              <div style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, padding: '0 16px 10px', flexShrink: 0
               }}>
                 {[
                   "What is a skill gap?",
@@ -143,22 +167,24 @@ export default function Chatbot() {
                   type="text" 
                   value={input}
                   onChange={e => setInput(e.target.value)}
-                  placeholder="Ask me anything..."
+                  placeholder={isTyping ? 'Waiting for reply...' : 'Ask me anything...'}
+                  disabled={isTyping}
                   style={{
                     flex: 1, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)',
                     padding: '10px 16px', borderRadius: 24, color: '#fff', outline: 'none',
-                    fontSize: '0.9rem', transition: 'border 0.2s',
+                    fontSize: '0.9rem', transition: 'border 0.2s', opacity: isTyping ? 0.5 : 1
                   }}
                   onFocus={e => e.target.style.borderColor = 'rgba(74, 240, 196, 0.4)'}
                   onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
                 />
-                <button type="submit" style={{
+                <button type="submit" disabled={isTyping} style={{
                   background: 'rgba(74, 240, 196, 0.15)', border: '1px solid rgba(74, 240, 196, 0.3)',
                   color: 'var(--accent)', borderRadius: '50%', width: 42, height: 42,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                  transition: 'all 0.2s'
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: isTyping ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s', opacity: isTyping ? 0.5 : 1
                 }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(74, 240, 196, 0.25)'}
+                onMouseEnter={e => { if (!isTyping) e.currentTarget.style.background = 'rgba(74, 240, 196, 0.25)' }}
                 onMouseLeave={e => e.currentTarget.style.background = 'rgba(74, 240, 196, 0.15)'}
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
