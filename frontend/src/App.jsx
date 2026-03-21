@@ -6,6 +6,7 @@ import Hero from './components/Hero'
 import UploadSection from './components/UploadSection'
 import LoadingState from './components/LoadingState'
 import ResultsSection from './components/ResultsSection'
+import BackgroundStars from './components/BackgroundStars'
 
 const LOADING_MESSAGES = [
   'Parsing resume...', 'Extracting skills...', 'Scanning job description...',
@@ -160,6 +161,7 @@ export default function App() {
   return (
     <>
       <div className="noise" />
+      <BackgroundStars />
       <div id="scroll-bar" />
       <motion.div
         className="cursor-dot"
