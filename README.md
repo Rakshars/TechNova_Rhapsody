@@ -103,6 +103,7 @@ Open `http://localhost:5173` in your browser once both are running.
 ### Option 3 — Docker
 
 If you'd rather not deal with Python/Node setup:
+
 for older version:
 ```bash
 docker-compose up --build 
