@@ -42,15 +42,7 @@ log = logging.getLogger(__name__)
 # SECTION 1 — DATASET LOADING
 # ══════════════════════════════════════════════════════════════════════════
 
-try:
-    import kagglehub
-    _path = kagglehub.dataset_download("snehaanbhawal/resume-dataset")
-    _csv  = os.path.join(_path, "Resume", "Resume.csv")
-    resume_df = pd.read_csv(_csv)
-    log.info(f"Dataset loaded — {resume_df.shape[0]} resumes")
-except Exception as e:
-    log.warning(f"Dataset not loaded ({e}). /dataset/stats will return empty.")
-    resume_df = pd.DataFrame(columns=["Category", "Resume_str"])
+resume_df = pd.DataFrame(columns=["Category", "Resume_str"])
 
 
 # ══════════════════════════════════════════════════════════════════════════

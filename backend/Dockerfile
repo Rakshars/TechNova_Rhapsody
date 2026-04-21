@@ -8,8 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Pre-download Kaggle dataset and ML model during build to make container start instantly
-RUN python -c "import kagglehub; kagglehub.dataset_download('snehaanbhawal/resume-dataset')"
+# Pre-download ML model during build to make container start instantly
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
 EXPOSE 8000
