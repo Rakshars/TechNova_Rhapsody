@@ -37,7 +37,8 @@ export default function Chatbot() {
     setIsTyping(true)
     const updated = [...messages, userMsg]
     try {
-      const resp = await fetch('/api/chat', {
+      const baseUrl = import.meta.env.VITE_API_URL || '/api';
+      const resp = await fetch(`${baseUrl}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: updated })

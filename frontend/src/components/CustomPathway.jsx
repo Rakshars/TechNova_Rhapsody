@@ -33,7 +33,8 @@ export default function CustomPathway({ skills }) {
     setLoading(true)
 
     try {
-      const resp = await fetch('/api/custom_pathway', {
+      const baseUrl = import.meta.env.VITE_API_URL || '/api';
+      const resp = await fetch(`${baseUrl}/custom_pathway`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ skills, start_date: startDate, end_date: endDate })

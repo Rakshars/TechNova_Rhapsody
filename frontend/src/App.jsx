@@ -109,7 +109,8 @@ export default function App() {
       formData.append('jd_file', files.jd)
       formData.append('mode', 'semantic')
 
-      const resp = await fetch('/api/upload', { method: 'POST', body: formData })
+      const baseUrl = import.meta.env.VITE_API_URL || '/api';
+      const resp = await fetch(`${baseUrl}/upload`, { method: 'POST', body: formData })
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}))
         throw new Error(err.detail || `Server error ${resp.status}`)
