@@ -107,7 +107,7 @@ export default function App() {
       const formData = new FormData()
       formData.append('resume', files.resume)
       formData.append('jd_file', files.jd)
-      formData.append('mode', 'semantic')
+      formData.append('mode', 'rule_based')
 
       const baseUrl = import.meta.env.VITE_API_URL || '/api';
       const resp = await fetch(`${baseUrl}/upload`, { method: 'POST', body: formData })
